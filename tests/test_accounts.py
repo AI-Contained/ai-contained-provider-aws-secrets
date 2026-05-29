@@ -107,12 +107,47 @@ def describe_Accounts():
             """).get_account(expected.account_id)
             assert_account(result, expected)
 
+        def it_uses_account_login_when_no_root_login() -> None:
+            expected = Account(
+                account_id="123456789012",
+                name="StagingAlpha",
+                trust_groups=[],
+                read_profile="staging-alpha-read",
+                write_profile=None,
+                login=AccountLogin(type="preauth", command=None),
+            )
+            result = Accounts(f"""
+            {{
+                accounts: {{
+                    "{expected.account_id}": {{
+                        name: "{expected.name}",
+                        read_profile: "{expected.read_profile}",
+                        login: {{ type: "{expected.login.type}" }},
+                    }},
+                }},
+            }}
+            """).get_account(expected.account_id)
+            assert_account(result, expected)
+
+        def it_errors_when_no_login_configured_for_account() -> None:
+            with pytest.raises(KeyError, match="Account has no login and no root login is defined"):
+                Accounts("""
+                {
+                    accounts: {
+                        "123456789012": {
+                            name: "StagingAlpha",
+                            read_profile: "staging-alpha-read",
+                        },
+                    },
+                }
+                """)
+
         def it_errors_on_invalid_json5() -> None:
-            with pytest.raises(Exception):
+            with pytest.raises(ValueError, match="Unexpected"):
                 Accounts("{ not valid json5 !!!}")
 
         def it_errors_on_missing_accounts_key() -> None:
-            with pytest.raises(Exception):
+            with pytest.raises(KeyError, match="Missing 'accounts' key in config"):
                 Accounts("{ login: { type: 'sso' } }")
 
     def describe_get_account():
