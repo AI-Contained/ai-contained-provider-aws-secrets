@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "ai-contained-core-mcp @ https://github.com/AI-Contained/ai-contained-base/archive/refs/tags/v0.3.1.zip#subdirectory=packages/core-mcp",
     "ai-contained-provider-trust-server-daemon @ https://github.com/AI-Contained/ai-contained-provider-trust-server/archive/refs/heads/main.zip#subdirectory=packages/daemon",
+    "json5>=0.14.0",
 ]
 
 [project.optional-dependencies]
