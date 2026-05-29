@@ -38,6 +38,28 @@ def describe_Accounts():
             """).get_account(expected.account_id)
             assert_account(result, expected)
 
+        def it_defaults_trust_groups_to_empty_list() -> None:
+            expected = Account(
+                account_id="123456789012",
+                name="StagingAlpha",
+                trust_groups=[],
+                read_profile="staging-alpha-read",
+                write_profile=None,
+                login=AccountLogin(type="sso", command=None),
+            )
+            result = Accounts(f"""
+            {{
+                login: {{ type: "{expected.login.type}" }},
+                accounts: {{
+                    "{expected.account_id}": {{
+                        name: "{expected.name}",
+                        read_profile: "{expected.read_profile}",
+                    }},
+                }},
+            }}
+            """).get_account(expected.account_id)
+            assert_account(result, expected)
+
         def it_propagates_root_login_to_accounts() -> None:
             expected = Account(
                 account_id="123456789012",
