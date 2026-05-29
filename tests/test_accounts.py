@@ -25,7 +25,7 @@ def describe_Accounts():
             )
             result = Accounts(f"""
             {{
-                login: {{ type: expected.login.type }},
+                login: {{ type: "{expected.login.type}" }},
                 accounts: {{
                     "{expected.account_id}": {{
                         name: "{expected.name}",
@@ -94,7 +94,7 @@ def describe_Accounts():
             )
             result = Accounts(f"""
             {{
-                login: {{ type: expected.login.type }},
+                login: {{ type: "sso" }},
                 accounts: {{
                     "{expected.account_id}": {{
                         name: "{expected.name}",
@@ -137,7 +137,7 @@ def describe_Accounts():
             )
             result = Accounts(f"""
             {{
-                login: {{ type: expected.login.type }},
+                login: {{ type: "{expected.login.type}" }},
                 accounts: {{
                     "{expected.account_id}": {{
                         name: "{expected.name}",
@@ -150,14 +150,14 @@ def describe_Accounts():
             assert_that(result).is_length(1)
             assert_account(result[0], expected)
 
-        def it_returns_none_for_unknown_group() -> None:
+        def it_returns_empty_list_for_unknown_group() -> None:
             result = Accounts("""
             {
                 login: { type: "sso" },
                 accounts: {},
             }
             """).get_group("UnknownGroup")
-            assert_that(result).is_none()
+            assert_that(result).is_empty()
 
         def it_excludes_disabled_accounts() -> None:
             result = Accounts("""
@@ -173,7 +173,7 @@ def describe_Accounts():
                 },
             }
             """).get_group("ProjectRocket")
-            assert_that(result).is_none()
+            assert_that(result).is_empty()
 
     def describe_all_accounts():
         def it_excludes_disabled_accounts() -> None:
