@@ -1,6 +1,13 @@
+import json
+from collections.abc import AsyncGenerator
+
 import pytest
 from assertpy import assert_that
+from fastmcp import FastMCP
+from fastmcp.client import Client
+from fastmcp.client.transports import FastMCPTransport
 
+from ai_contained.provider.aws_secrets import register
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.aws_accounts_resource import AwsAccountResourceEntry, AwsAccountsResource
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
@@ -28,7 +35,7 @@ def describe_AwsAccountsResource():
     def auth_write():
         return AwsAuthTool(Role.READ_WRITE)
 
-    def describe_get():
+    def describe_convert():
         def it_includes_name_and_trust_groups(account_id, auth_read, auth_write) -> None:
             expected = AwsAccountResourceEntry(
                 name="StagingAlpha",
@@ -52,7 +59,7 @@ def describe_AwsAccountsResource():
                 """),
                 auth_read,
                 auth_write,
-            ).get()
+            ).convert()
             assert_account_entry(result.get(account_id), expected)
 
         def it_excludes_disabled_accounts(account_id, auth_read, auth_write) -> None:
@@ -72,7 +79,7 @@ def describe_AwsAccountsResource():
                 """),
                 auth_read,
                 auth_write,
-            ).get()
+            ).convert()
             assert_that(result.get(account_id)).is_none()
 
         def it_reports_read_access_as_unavailable_when_no_read_profile_is_configured(account_id, auth_read, auth_write) -> None:
@@ -97,7 +104,7 @@ def describe_AwsAccountsResource():
                 """),
                 auth_read,
                 auth_write,
-            ).get()
+            ).convert()
             assert_account_entry(result.get(account_id), expected)
 
         def it_reports_read_access_as_pending_authorization(account_id, auth_read, auth_write) -> None:
@@ -122,7 +129,7 @@ def describe_AwsAccountsResource():
                 """),
                 auth_read,
                 auth_write,
-            ).get()
+            ).convert()
             assert_account_entry(result.get(account_id), expected)
 
         def it_reports_read_access_as_active_after_authorization(account_id, auth_write) -> None:
@@ -149,7 +156,7 @@ def describe_AwsAccountsResource():
                 """),
                 auth_read,
                 auth_write,
-            ).get()
+            ).convert()
             assert_account_entry(result.get(account_id), expected)
 
         def it_reports_write_access_as_pending_authorization(account_id, auth_read, auth_write) -> None:
@@ -175,7 +182,7 @@ def describe_AwsAccountsResource():
                 """),
                 auth_read,
                 auth_write,
-            ).get()
+            ).convert()
             assert_account_entry(result.get(account_id), expected)
 
         def it_reports_write_access_as_active_after_authorization(account_id, auth_read) -> None:
@@ -203,5 +210,40 @@ def describe_AwsAccountsResource():
                 """),
                 auth_read,
                 auth_write,
-            ).get()
+            ).convert()
             assert_account_entry(result.get(account_id), expected)
+
+    def describe_get():
+        @pytest.fixture
+        async def client(account_id: str, auth_read: AwsAuthTool, auth_write: AwsAuthTool) -> AsyncGenerator[Client[FastMCPTransport], None]:
+            server = FastMCP("test")
+            await register(
+                server,
+                _accounts=Accounts(f"""
+                {{
+                    login: {{ type: "sso" }},
+                    accounts: {{
+                        "{account_id}": {{
+                            name: "StagingAlpha",
+                            trust_groups: ["ProjectRocket"],
+                            read_profile: "staging-alpha-read",
+                            write_profile: "staging-alpha-write",
+                        }},
+                    }},
+                }}
+                """),
+                _auth_read=auth_read,
+                _auth_write=auth_write,
+            )
+            async with Client(transport=server) as c:
+                yield c
+
+        async def it_registers_the_resource(client: Client[FastMCPTransport]) -> None:
+            resources = await client.list_resources()
+            assert_that([str(r.uri) for r in resources]).contains("ai-contained://aws-secrets/accounts")
+
+        async def it_reflects_authorization_state(client: Client[FastMCPTransport], account_id: str, auth_read: AwsAuthTool) -> None:
+            auth_read.authorize(account_id)
+            content = await client.read_resource("ai-contained://aws-secrets/accounts")
+            data = json.loads(content[0].text)
+            assert_that(data[account_id]["read_only"]).is_equal_to("authorized")

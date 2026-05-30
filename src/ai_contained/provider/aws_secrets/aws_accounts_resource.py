@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
+
+from fastmcp.resources import resource
 
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
@@ -28,7 +31,7 @@ class AwsAccountsResource:
             return AccessStatus.AUTHORIZED
         return AccessStatus.REQUIRES_AUTH
 
-    def get(self) -> dict[AwsAccountId, AwsAccountResourceEntry]:
+    def convert(self) -> dict[AwsAccountId, AwsAccountResourceEntry]:
         return {
             account.account_id: AwsAccountResourceEntry(
                 name=account.name,
@@ -38,3 +41,8 @@ class AwsAccountsResource:
             )
             for account in self._accounts.all_accounts()
         }
+
+    @resource("ai-contained://aws-secrets/accounts", mime_type="application/json")
+    def get(self) -> dict:
+        """List all configured AWS accounts with their current authorization state."""
+        return {account_id: dataclasses.asdict(entry) for account_id, entry in self.convert().items()}
