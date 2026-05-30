@@ -5,6 +5,8 @@ from typing import Literal
 
 import json5
 
+from ai_contained.provider.aws_secrets.types import AwsAccountId
+
 
 @dataclass
 class AccountLogin:
@@ -14,7 +16,7 @@ class AccountLogin:
 
 @dataclass
 class Account:
-    account_id: str
+    account_id: AwsAccountId
     name: str
     trust_groups: list[str]
     read_profile: str | None
@@ -39,7 +41,7 @@ class Accounts:
         root_login = None
         if root_login_data := data.get("login", None):
             root_login = AccountLogin(type=root_login_data["type"], command=root_login_data.get("command", None))
-        self._accounts: dict[str, Account] = {
+        self._accounts: dict[AwsAccountId, Account] = {
             account_id: Account(
                 account_id=account_id,
                 name=acct["name"],
@@ -51,7 +53,7 @@ class Accounts:
             for account_id, acct in data["accounts"].items()
         }
 
-    def get_account(self, account_id: str) -> Account | None:
+    def get_account(self, account_id: AwsAccountId) -> Account | None:
         return self._accounts.get(account_id, None)
 
     def get_group(self, group_name: str) -> list[Account]:
