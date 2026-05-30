@@ -142,6 +142,29 @@ def describe_Accounts():
                 }
                 """)
 
+        def it_errors_on_misspelled_login_type() -> None:
+            with pytest.raises(KeyError, match="type"):
+                Accounts("""
+                {
+                    login: { tpye: "sso" },
+                    accounts: {},
+                }
+                """)
+
+        def it_errors_on_misspelled_account_name() -> None:
+            with pytest.raises(KeyError, match="name"):
+                Accounts("""
+                {
+                    login: { type: "sso" },
+                    accounts: {
+                        "123456789012": {
+                            nme: "StagingAlpha",
+                            read_profile: "staging-alpha-read",
+                        },
+                    },
+                }
+                """)
+
         def it_errors_on_invalid_json5() -> None:
             with pytest.raises(ValueError, match="Unexpected"):
                 Accounts("{ not valid json5 !!!}")
