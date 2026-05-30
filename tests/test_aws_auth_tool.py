@@ -24,7 +24,18 @@ def describe_AwsAuthTool():
             tool.revoke_all()
             assert_that(tool.is_authorized("123456789012")).is_false()
 
+        def it_is_idempotent_when_authorizing_twice() -> None:
+            tool = AwsAuthTool(Role.READ_ONLY)
+            tool.authorize("123456789012")
+            tool.authorize("123456789012")
+            assert_that(tool.is_authorized("123456789012")).is_true()
+
     def describe_revoke():
+        def it_does_not_raise_when_revoking_unknown_account() -> None:
+            tool = AwsAuthTool(Role.READ_ONLY)
+            tool.revoke("123456789012")
+            assert_that(tool.is_authorized("123456789012")).is_false()
+
         def it_only_revokes_target_account() -> None:
             tool = AwsAuthTool(Role.READ_ONLY)
             tool.authorize("123456789012")

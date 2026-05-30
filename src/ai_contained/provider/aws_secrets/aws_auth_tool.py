@@ -5,16 +5,17 @@ from ai_contained.provider.aws_secrets.types import AwsAccountId, Role
 
 class AwsAuthTool:
     def __init__(self, role: Role) -> None:
-        raise NotImplementedError
+        self.role = role
+        self._authorized: set[AwsAccountId] = set()
 
     def is_authorized(self, account_id: AwsAccountId) -> bool:
-        raise NotImplementedError
+        return account_id in self._authorized
 
     def authorize(self, account_id: AwsAccountId) -> None:
-        raise NotImplementedError
+        self._authorized.add(account_id)
 
     def revoke(self, account_id: AwsAccountId) -> None:
-        raise NotImplementedError
+        self._authorized.discard(account_id)
 
     def revoke_all(self) -> None:
-        raise NotImplementedError
+        self._authorized.clear()
