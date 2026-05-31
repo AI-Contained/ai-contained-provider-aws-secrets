@@ -13,3 +13,10 @@ class AccessStatus(StrEnum):
     UNSUPPORTED = "unsupported"
     REQUIRES_AUTH = "requires_auth"
     AUTHORIZED = "authorized"
+
+
+class LoginType(StrEnum):
+    SSO = "sso"
+    PREAUTH = "preauth"
+    DISABLED = "disabled"
+    MFA = "mfa"

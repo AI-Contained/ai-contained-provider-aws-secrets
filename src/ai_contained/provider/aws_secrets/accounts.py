@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 import json5
 
-from ai_contained.provider.aws_secrets.types import AwsAccountId
+from ai_contained.provider.aws_secrets.types import AwsAccountId, LoginType
 
 
 @dataclass
 class AccountLogin:
-    type: Literal["sso", "preauth", "disabled", "mfa"]
+    type: LoginType
     command: str | None
 
 
