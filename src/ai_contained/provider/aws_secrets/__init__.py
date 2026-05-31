@@ -5,6 +5,7 @@ import os
 from fastmcp import FastMCP
 
 from ai_contained.provider.aws_secrets.accounts import Accounts
+from ai_contained.provider.aws_secrets.authenticator import Authenticator
 from ai_contained.provider.aws_secrets.aws_accounts_resource import AwsAccountsResource
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
 from ai_contained.provider.aws_secrets.types import Role
@@ -27,9 +28,12 @@ async def register(
     # auth_read and auth_write are shared across all components — the same instances
     # are passed to every resource and tool so that authorize() called by one is
     # immediately visible to is_authorized() called by another.
-    auth_read = _auth_read or AwsAuthTool(Role.READ_ONLY)
-    auth_write = _auth_write or AwsAuthTool(Role.READ_WRITE)
+    authenticator = Authenticator()
+    auth_read = _auth_read or AwsAuthTool(Role.READ_ONLY, _accounts, authenticator)
+    auth_write = _auth_write or AwsAuthTool(Role.READ_WRITE, _accounts, authenticator)
 
     # Bound methods hold a strong reference to self, keeping each component instance
     # (and the auth_read/auth_write it holds) alive for the lifetime of the server.
     mcp.add_resource(AwsAccountsResource(_accounts, auth_read, auth_write).get)
+    mcp.tool(name="aws_auth_read")(auth_read.authenticate)
+    mcp.tool(name="aws_auth_write")(auth_write.authenticate)

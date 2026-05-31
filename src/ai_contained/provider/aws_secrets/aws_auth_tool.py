@@ -1,11 +1,15 @@
-from __future__ import annotations
+from fastmcp import Context
 
+from ai_contained.provider.aws_secrets.accounts import Accounts
+from ai_contained.provider.aws_secrets.authenticator import Authenticator, AuthenticatorBase
 from ai_contained.provider.aws_secrets.types import AwsAccountId, Role
 
 
 class AwsAuthTool:
-    def __init__(self, role: Role) -> None:
+    def __init__(self, role: Role, accounts: Accounts, authenticator: AuthenticatorBase = Authenticator()) -> None:
         self.role = role
+        self._accounts = accounts
+        self._authenticator = authenticator
         self._authorized: set[AwsAccountId] = set()
 
     def is_authorized(self, account_id: AwsAccountId) -> bool:
@@ -19,3 +23,6 @@ class AwsAuthTool:
 
     def revoke_all(self) -> None:
         self._authorized.clear()
+
+    async def authenticate(self, ctx: Context, account_id: AwsAccountId) -> str:
+        raise NotImplementedError
