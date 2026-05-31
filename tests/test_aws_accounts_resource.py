@@ -27,16 +27,10 @@ def describe_AwsAccountsResource():
     def account_id():
         return "123456789012"
 
-    @pytest.fixture
-    def auth_read():
-        return AwsAuthTool(Role.READ_ONLY)
 
-    @pytest.fixture
-    def auth_write():
-        return AwsAuthTool(Role.READ_WRITE)
 
     def describe_convert():
-        def it_includes_name_and_trust_groups(account_id, auth_read, auth_write) -> None:
+        def it_includes_name_and_trust_groups(account_id, aws_auth_read, aws_auth_write) -> None:
             expected = AwsAccountResourceEntry(
                 name="StagingAlpha",
                 trust_groups=["ProjectRocket"],
@@ -57,12 +51,12 @@ def describe_AwsAccountsResource():
                     }},
                 }}
                 """),
-                auth_read,
-                auth_write,
+                aws_auth_read,
+                aws_auth_write,
             ).convert()
             assert_account_entry(result.get(account_id), expected)
 
-        def it_excludes_disabled_accounts(account_id, auth_read, auth_write) -> None:
+        def it_excludes_disabled_accounts(account_id, aws_auth_read, aws_auth_write) -> None:
             result = AwsAccountsResource(
                 Accounts(f"""
                 {{
@@ -77,12 +71,12 @@ def describe_AwsAccountsResource():
                     }},
                 }}
                 """),
-                auth_read,
-                auth_write,
+                aws_auth_read,
+                aws_auth_write,
             ).convert()
             assert_that(result.get(account_id)).is_none()
 
-        def it_reports_read_access_as_unavailable_when_no_read_profile_is_configured(account_id, auth_read, auth_write) -> None:
+        def it_reports_read_access_as_unavailable_when_no_read_profile_is_configured(account_id, aws_auth_read, aws_auth_write) -> None:
             expected = AwsAccountResourceEntry(
                 name="StagingAlpha",
                 trust_groups=[],
@@ -102,12 +96,12 @@ def describe_AwsAccountsResource():
                     }},
                 }}
                 """),
-                auth_read,
-                auth_write,
+                aws_auth_read,
+                aws_auth_write,
             ).convert()
             assert_account_entry(result.get(account_id), expected)
 
-        def it_reports_read_access_as_pending_authorization(account_id, auth_read, auth_write) -> None:
+        def it_reports_read_access_as_pending_authorization(account_id, aws_auth_read, aws_auth_write) -> None:
             expected = AwsAccountResourceEntry(
                 name="StagingAlpha",
                 trust_groups=[],
@@ -127,20 +121,19 @@ def describe_AwsAccountsResource():
                     }},
                 }}
                 """),
-                auth_read,
-                auth_write,
+                aws_auth_read,
+                aws_auth_write,
             ).convert()
             assert_account_entry(result.get(account_id), expected)
 
-        def it_reports_read_access_as_active_after_authorization(account_id, auth_write) -> None:
+        def it_reports_read_access_as_active_after_authorization(account_id, aws_auth_read, aws_auth_write) -> None:
             expected = AwsAccountResourceEntry(
                 name="StagingAlpha",
                 trust_groups=[],
                 read_only=AccessStatus.AUTHORIZED,
                 read_write=AccessStatus.UNSUPPORTED,
             )
-            auth_read = AwsAuthTool(Role.READ_ONLY)
-            auth_read.authorize(account_id)
+            aws_auth_read.authorize(account_id)
             result = AwsAccountsResource(
                 Accounts(f"""
                 {{
@@ -154,12 +147,12 @@ def describe_AwsAccountsResource():
                     }},
                 }}
                 """),
-                auth_read,
-                auth_write,
+                aws_auth_read,
+                aws_auth_write,
             ).convert()
             assert_account_entry(result.get(account_id), expected)
 
-        def it_reports_write_access_as_pending_authorization(account_id, auth_read, auth_write) -> None:
+        def it_reports_write_access_as_pending_authorization(account_id, aws_auth_read, aws_auth_write) -> None:
             expected = AwsAccountResourceEntry(
                 name="StagingAlpha",
                 trust_groups=[],
@@ -180,20 +173,19 @@ def describe_AwsAccountsResource():
                     }},
                 }}
                 """),
-                auth_read,
-                auth_write,
+                aws_auth_read,
+                aws_auth_write,
             ).convert()
             assert_account_entry(result.get(account_id), expected)
 
-        def it_reports_write_access_as_active_after_authorization(account_id, auth_read) -> None:
+        def it_reports_write_access_as_active_after_authorization(account_id, aws_auth_read, aws_auth_write) -> None:
             expected = AwsAccountResourceEntry(
                 name="StagingAlpha",
                 trust_groups=[],
                 read_only=AccessStatus.REQUIRES_AUTH,
                 read_write=AccessStatus.AUTHORIZED,
             )
-            auth_write = AwsAuthTool(Role.READ_WRITE)
-            auth_write.authorize(account_id)
+            aws_auth_write.authorize(account_id)
             result = AwsAccountsResource(
                 Accounts(f"""
                 {{
@@ -208,14 +200,14 @@ def describe_AwsAccountsResource():
                     }},
                 }}
                 """),
-                auth_read,
-                auth_write,
+                aws_auth_read,
+                aws_auth_write,
             ).convert()
             assert_account_entry(result.get(account_id), expected)
 
     def describe_get():
         @pytest.fixture
-        async def client(account_id: str, auth_read: AwsAuthTool, auth_write: AwsAuthTool) -> AsyncGenerator[Client[FastMCPTransport], None]:
+        async def client(account_id: str, aws_auth_read: AwsAuthTool, aws_auth_write: AwsAuthTool) -> AsyncGenerator[Client[FastMCPTransport], None]:
             server = FastMCP("test")
             await register(
                 server,
@@ -232,8 +224,8 @@ def describe_AwsAccountsResource():
                     }},
                 }}
                 """),
-                _auth_read=auth_read,
-                _auth_write=auth_write,
+                _auth_read=aws_auth_read,
+                _auth_write=aws_auth_write,
             )
             async with Client(transport=server) as c:
                 yield c
@@ -242,8 +234,8 @@ def describe_AwsAccountsResource():
             resources = await client.list_resources()
             assert_that([str(r.uri) for r in resources]).contains("ai-contained://aws-secrets/accounts")
 
-        async def it_reflects_authorization_state(client: Client[FastMCPTransport], account_id: str, auth_read: AwsAuthTool) -> None:
-            auth_read.authorize(account_id)
+        async def it_reflects_authorization_state(client: Client[FastMCPTransport], account_id: str, aws_auth_read: AwsAuthTool) -> None:
+            aws_auth_read.authorize(account_id)
             content = await client.read_resource("ai-contained://aws-secrets/accounts")
             data = json.loads(content[0].text)
             assert_that(data[account_id]["read_only"]).is_equal_to("authorized")
