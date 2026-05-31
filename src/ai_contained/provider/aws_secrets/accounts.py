@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import json5
 
-from ai_contained.provider.aws_secrets.types import AwsAccountId, LoginType
+from ai_contained.provider.aws_secrets.types import AwsAccountId, LoginType, Role
 
 
 @dataclass
@@ -23,6 +23,12 @@ class Account:
     read_profile: str | None
     write_profile: str | None
     login: AccountLogin
+
+    def profile_for(self, role: Role) -> str:
+        profile = self.read_profile if role == Role.READ_ONLY else self.write_profile
+        if profile is None:
+            raise ValueError(f"no {role} profile configured for account {self.account_id}")
+        return profile
 
 
 def _parse_login(data: dict, fallback: AccountLogin | None) -> AccountLogin:

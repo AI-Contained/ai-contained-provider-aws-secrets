@@ -29,13 +29,26 @@ class AuthenticatorBase(Protocol):
 
 class Authenticator(AuthenticatorBase):
     async def validate(self, role: Role, account: Account) -> bool:
-        profile = account.read_profile if role == Role.READ_ONLY else account.write_profile
-        # 1. run: aws sts get-caller-identity --profile <profile>
-        # 2. non-zero exit → return False
-        # 3. parse JSON, extract Account field
-        # 4. account mismatch → raise AuthenticationError
-        # 5. return True
-        raise NotImplementedError
+        command = account.login.check_command or "aws sts get-caller-identity --output json"
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            return False
+        try:
+            caller = json.loads(stdout.decode())
+            resolved = caller["Account"]
+        except (json.JSONDecodeError, KeyError):
+            raise AuthenticationError(f"invalid response from check_command: {stdout.decode()!r}")
+        if resolved != account.account_id:
+            raise AuthenticationError(
+                f"credentials resolve to '{resolved}', expected '{account.account_id}'"
+            )
+        return True
 
     async def login(self, ctx: Context, role: Role, account: Account) -> None:
         match account.login.type:
@@ -56,16 +69,11 @@ class Authenticator(AuthenticatorBase):
             "AWS SSO Login is still processing the authorization request.\n\n"
             "Click Allow to check again, or Decline to cancel."
         )
-        profile = account.read_profile if role == Role.READ_ONLY else account.write_profile
-        if not profile:
-            raise AuthenticationError(
-                f"No {role} profile configured for account {account.account_id}"
-            )
         command = account.login.command or "aws sso login --no-browser --use-device-code"
 
         proc = await asyncio.create_subprocess_shell(
             command,
-            env={**os.environ, "AWS_PROFILE": profile},
+            env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

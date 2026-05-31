@@ -58,6 +58,24 @@ def describe_Authenticator():
                 await Authenticator().validate(Role.READ_ONLY, expected)
             assert_that(str(exc_info.value)).contains(f"expected '{expected.account_id}'")
 
+        async def raises_when_response_is_not_valid_json() -> None:
+            account = make_account(
+                read_profile="mock-profile",
+                check_command="/bin/sh -c 'echo not-json; exit 0'",
+            )
+            with pytest.raises(AuthenticationError) as exc_info:
+                await Authenticator().validate(Role.READ_ONLY, account)
+            assert_that(str(exc_info.value)).contains("invalid response")
+
+        async def raises_when_response_is_missing_account_key() -> None:
+            account = make_account(
+                read_profile="mock-profile",
+                check_command="/bin/sh -c 'echo {\"UserId\": \"foo\"}; exit 0'",
+            )
+            with pytest.raises(AuthenticationError) as exc_info:
+                await Authenticator().validate(Role.READ_ONLY, account)
+            assert_that(str(exc_info.value)).contains("invalid response")
+
 
 
     def describe_login():
@@ -75,6 +93,7 @@ def describe_Authenticator():
                 assert_that(str(exc_info.value)).is_equal_to("credentials invalid — fix externally and retry")
 
         def describe_sso():
+
             LOOP_ELICITATION_MESSAGE = (
                 "AWS SSO Login is still processing the authorization request.\n\n"
                 "Click Allow to check again, or Decline to cancel."

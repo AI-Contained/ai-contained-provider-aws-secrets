@@ -2,6 +2,7 @@ import pytest
 from assertpy import assert_that
 
 from ai_contained.provider.aws_secrets.accounts import Account, AccountLogin, Accounts
+from ai_contained.provider.aws_secrets.types import Role
 
 
 def assert_account(result: Account, expected: Account) -> None:
@@ -254,3 +255,40 @@ def describe_Accounts():
             }
             """).all_accounts()
             assert_that([a.name for a in result]).is_equal_to(["StagingAlpha"])
+
+
+def describe_Account():
+    def describe_profile_for():
+        def _make_account(read_profile=None, write_profile=None):
+            return Account(
+                account_id="123456789012",
+                name="Test",
+                trust_groups=[],
+                read_profile=read_profile,
+                write_profile=write_profile,
+                login=AccountLogin(type="sso", command=None),
+            )
+
+        def returns_read_profile_for_read_only_role() -> None:
+            account = _make_account(read_profile="read-profile", write_profile="write-profile")
+            assert_that(account.profile_for(Role.READ_ONLY)).is_equal_to("read-profile")
+
+        def returns_write_profile_for_write_role() -> None:
+            account = _make_account(read_profile="read-profile", write_profile="write-profile")
+            assert_that(account.profile_for(Role.READ_WRITE)).is_equal_to("write-profile")
+
+        def raises_when_read_profile_is_none() -> None:
+            account = _make_account(read_profile=None)
+            with pytest.raises(ValueError) as exc_info:
+                account.profile_for(Role.READ_ONLY)
+            assert_that(str(exc_info.value)).is_equal_to(
+                f"no {Role.READ_ONLY} profile configured for account {account.account_id}"
+            )
+
+        def raises_when_write_profile_is_none() -> None:
+            account = _make_account(write_profile=None)
+            with pytest.raises(ValueError) as exc_info:
+                account.profile_for(Role.READ_WRITE)
+            assert_that(str(exc_info.value)).is_equal_to(
+                f"no {Role.READ_WRITE} profile configured for account {account.account_id}"
+            )
