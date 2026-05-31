@@ -23,6 +23,7 @@ def make_account(
     write_profile: str | None = None,
     login_type: LoginType = LoginType.PREAUTH,
     command: str | None = None,
+    check_command: str | None = None,
 ) -> Account:
     return Account(
         account_id=account_id,
@@ -30,41 +31,34 @@ def make_account(
         trust_groups=[],
         read_profile=read_profile,
         write_profile=write_profile,
-        login=AccountLogin(type=login_type, command=command),
+        login=AccountLogin(type=login_type, command=command, check_command=check_command),
     )
 
 
 def describe_Authenticator():
-    @pytest.fixture
-    def aws_account_id() -> str:
-        account_id = os.environ.get("TEST_AWS_ACCOUNT_ID")
-        if not account_id:
-            pytest.skip("TEST_AWS_ACCOUNT_ID not set")
-        return account_id
-
-    @pytest.fixture
-    def aws_profile() -> str:
-        profile = os.environ.get("TEST_AWS_PROFILE")
-        if not profile:
-            pytest.skip("TEST_AWS_PROFILE not set")
-        return profile
-
     def describe_validate():
-        async def returns_false_when_credentials_are_absent_or_expired() -> None:
-            account = make_account(read_profile="nonexistent-profile-xyz")
-            result = await Authenticator().validate(Role.READ_ONLY, account)
+        mock_sts = str(Path(__file__).parent / "bin" / "mock_aws_sts.sh")
+
+        async def returns_false_when_command_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
+            monkeypatch.setenv("MOCK_STS_EXIT_CODE", "1")
+            expected = make_account(read_profile="mock-profile", check_command=mock_sts)
+            result = await Authenticator().validate(Role.READ_ONLY, expected)
             assert_that(result).is_false()
 
-        async def returns_true_when_credentials_are_valid(aws_account_id: str, aws_profile: str) -> None:
-            account = make_account(account_id=aws_account_id, read_profile=aws_profile)
-            result = await Authenticator().validate(Role.READ_ONLY, account)
+        async def returns_true_when_account_id_matches(monkeypatch: pytest.MonkeyPatch) -> None:
+            expected = make_account(account_id="123456789012", read_profile="mock-profile", check_command=mock_sts)
+            monkeypatch.setenv("MOCK_STS_ACCOUNT_ID", expected.account_id)
+            result = await Authenticator().validate(Role.READ_ONLY, expected)
             assert_that(result).is_true()
 
-        async def raises_when_credentials_resolve_to_the_wrong_account(aws_profile: str) -> None:
-            account = make_account(account_id="000000000000", read_profile=aws_profile)
+        async def raises_when_account_id_does_not_match(monkeypatch: pytest.MonkeyPatch) -> None:
+            monkeypatch.setenv("MOCK_STS_ACCOUNT_ID", "999999999999")
+            expected = make_account(account_id="123456789012", read_profile="mock-profile", check_command=mock_sts)
             with pytest.raises(AuthenticationError) as exc_info:
-                await Authenticator().validate(Role.READ_ONLY, account)
-            assert_that(str(exc_info.value)).contains("expected '000000000000'")
+                await Authenticator().validate(Role.READ_ONLY, expected)
+            assert_that(str(exc_info.value)).contains(f"expected '{expected.account_id}'")
+
+
 
     def describe_login():
         @pytest.fixture

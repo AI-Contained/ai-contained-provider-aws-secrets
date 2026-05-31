@@ -11,6 +11,8 @@ from ai_contained.provider.aws_secrets.types import AwsAccountId, LoginType
 class AccountLogin:
     type: LoginType
     command: str | None
+    # Must exit non-zero on invalid credentials, and output JSON with an "Account" key on success.
+    check_command: str | None = None
 
 
 @dataclass
@@ -26,7 +28,7 @@ class Account:
 def _parse_login(data: dict, fallback: AccountLogin | None) -> AccountLogin:
     login_data = data.get("login", None)
     if login_data is not None:
-        return AccountLogin(type=login_data["type"], command=login_data.get("command", None))
+        return AccountLogin(type=login_data["type"], command=login_data.get("command", None), check_command=login_data.get("check_command", None))
     if fallback is not None:
         return fallback
     raise KeyError("Account has no login and no root login is defined")
@@ -39,7 +41,7 @@ class Accounts:
             raise KeyError("Missing 'accounts' key in config")
         root_login = None
         if root_login_data := data.get("login", None):
-            root_login = AccountLogin(type=root_login_data["type"], command=root_login_data.get("command", None))
+            root_login = AccountLogin(type=root_login_data["type"], command=root_login_data.get("command", None), check_command=root_login_data.get("check_command", None))
         self._accounts: dict[AwsAccountId, Account] = {
             account_id: Account(
                 account_id=account_id,
