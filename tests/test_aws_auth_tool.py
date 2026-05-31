@@ -124,12 +124,14 @@ def describe_AwsAuthTool():
             mock.login = _return_responses(None)
             result = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
             assert_that(result.is_error).is_true()
+            assert_that(result.content[0].text).is_equal_to(f"Login succeeded but credentials are still invalid for {ACCOUNT_ID}")
             assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_false()
 
         async def it_raises_when_account_is_unknown(auth_setup) -> None:
             client, auth_tool, mock = auth_setup
             result = await client.call_tool("aws_auth_read", {"account_id": "000000000000"}, raise_on_error=False)
             assert_that(result.is_error).is_true()
+            assert_that(result.content[0].text).is_equal_to("Unknown account: 000000000000")
 
         async def it_raises_when_login_raises_tool_error(auth_setup) -> None:
             client, auth_tool, mock = auth_setup
@@ -137,6 +139,7 @@ def describe_AwsAuthTool():
             mock.login = _return_responses(ToolError("user cancelled"))
             result = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
             assert_that(result.is_error).is_true()
+            assert_that(result.content[0].text).is_equal_to("user cancelled")
             assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_false()
 
         async def it_raises_when_validate_raises_authentication_error(auth_setup) -> None:
@@ -144,6 +147,7 @@ def describe_AwsAuthTool():
             mock.validate = _return_responses(AuthenticationError("wrong account"))
             result = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
             assert_that(result.is_error).is_true()
+            assert_that(result.content[0].text).is_equal_to("wrong account")
             assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_false()
 
         async def it_raises_when_post_login_validate_raises_authentication_error(auth_setup) -> None:
@@ -152,4 +156,5 @@ def describe_AwsAuthTool():
             mock.login = _return_responses(None)
             result = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
             assert_that(result.is_error).is_true()
+            assert_that(result.content[0].text).is_equal_to("wrong account")
             assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_false()
