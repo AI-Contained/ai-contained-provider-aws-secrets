@@ -96,6 +96,9 @@ def describe_Authenticator():
                 assert_that(msg.splitlines()[-1]).starts_with("https://")
                 return ("accept", None)
 
+            # Success cases only assert is_error=False — the return value is "ok" from
+            # fake_login, not from login() itself, so it's not worth asserting here.
+
             @pytest.fixture
             def mock_account() -> Account:
                 return make_account(
@@ -137,6 +140,7 @@ def describe_Authenticator():
                 elicitor.on_elicit(_accept_asserting_url)
                 result = await client.call_tool("fake_login", {}, raise_on_error=False)
                 assert_that(result.is_error).is_false()
+                # return value not asserted — it's "ok" from fake_login, not from login()
 
             async def raises_when_user_declines_while_waiting_for_aws(
                 client: Client[FastMCPTransport],
@@ -164,7 +168,8 @@ def describe_Authenticator():
                 elicitor.on_elicit(_accept_asserting_url)
 
                 def accept_and_unblock(msg, rtype, params, ctx):
-                    assert msg == LOOP_ELICITATION_MESSAGE
+                    assert_that(msg).equals(LOOP_ELICITATION_MESSAGE)
+                    # We signal to our MOCK SSO app that we're finished
                     with open(str(fifo), "w") as f:
                         f.write("done\n")
                     return ("accept", None)
