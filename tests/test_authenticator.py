@@ -10,7 +10,7 @@ from fastmcp.client.transports import FastMCPTransport
 
 from mcp.types import TextContent
 
-from ai_contained.core.mcp.testing import Elicitor
+from ai_contained.core.mcp.testing import Elicitor, WrapCallToolResult
 from ai_contained.provider.aws_secrets.accounts import Account, AccountLogin
 from ai_contained.provider.aws_secrets.authenticator import Authenticator, AuthenticationError
 from ai_contained.provider.aws_secrets.types import LoginType, Role
@@ -102,8 +102,9 @@ def describe_Authenticator():
             @pytest.fixture
             def mock_account() -> Account:
                 return make_account(
+                    read_profile="mock-profile",
                     login_type=LoginType.SSO,
-                    command="tests/bin/mock_aws_sso_login.sh",
+                    command=str(Path(__file__).parent / "bin" / "mock_aws_sso_login.sh"),
                 )
 
             @pytest.fixture
@@ -118,6 +119,50 @@ def describe_Authenticator():
 
                 async with Client(transport=server, elicitation_handler=elicitor) as c:
                     yield c
+
+            async def raises_when_sso_command_does_not_exist(elicitor: Elicitor) -> None:
+                account = make_account(
+                    read_profile="mock-profile",
+                    login_type=LoginType.SSO,
+                    command="non-existent-command",
+                )
+                server = FastMCP("test")
+
+                @server.tool()
+                async def fake_login(ctx: Context) -> str:
+                    await Authenticator().login(ctx, Role.READ_ONLY, account)
+                    return "ok"
+
+                async with Client(transport=server, elicitation_handler=elicitor) as c:
+                    result = WrapCallToolResult(**vars(await c.call_tool("fake_login", {}, raise_on_error=False)))
+
+                assert_that(result.is_error).is_true()
+                error = result.json()
+                assert_that(error["exit_status"]).is_equal_to("127")
+                assert_that(error["stdout"]).is_equal_to("")
+                assert_that(error["stderr"]).contains("non-existent-command")
+
+            async def raises_when_sso_command_exits_before_emitting_urls(elicitor: Elicitor) -> None:
+                expected = {"exit_status": "2", "stdout": "out_line\n", "stderr": "err_line\n"}
+                account = make_account(
+                    read_profile="mock-profile",
+                    login_type=LoginType.SSO,
+                    command="/bin/sh -c 'echo -n \"{stdout}\"; echo -n \"{stderr}\" >&2; exit {exit_code}'".format(
+                        **expected, exit_code=int(expected["exit_status"])
+                    ),
+                )
+                server = FastMCP("test")
+
+                @server.tool()
+                async def fake_login(ctx: Context) -> str:
+                    await Authenticator().login(ctx, Role.READ_ONLY, account)
+                    return "ok"
+
+                async with Client(transport=server, elicitation_handler=elicitor) as c:
+                    result = WrapCallToolResult(**vars(await c.call_tool("fake_login", {}, raise_on_error=False)))
+
+                assert_that(result.is_error).is_true()
+                assert_that(result.json()).is_equal_to(expected)
 
             async def raises_when_user_declines_initial_elicitation(
                 client: Client[FastMCPTransport], elicitor: Elicitor
@@ -168,7 +213,7 @@ def describe_Authenticator():
                 elicitor.on_elicit(_accept_asserting_url)
 
                 def accept_and_unblock(msg, rtype, params, ctx):
-                    assert_that(msg).equals(LOOP_ELICITATION_MESSAGE)
+                    assert_that(msg).is_equal_to(LOOP_ELICITATION_MESSAGE)
                     # We signal to our MOCK SSO app that we're finished
                     with open(str(fifo), "w") as f:
                         f.write("done\n")
