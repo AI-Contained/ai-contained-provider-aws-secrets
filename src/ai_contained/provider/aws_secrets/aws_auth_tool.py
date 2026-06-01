@@ -26,4 +26,12 @@ class AwsAuthTool:
         self._authorized.clear()
 
     async def authenticate(self, ctx: Context, account_id: AwsAccountId) -> str:
-        raise NotImplementedError
+        account = self._accounts.get_account(account_id)
+        if account is None:
+            raise ToolError(f"Unknown account: {account_id}")
+        if not await self._authenticator.validate(self.role, account):
+            await self._authenticator.login(ctx, self.role, account)
+            if not await self._authenticator.validate(self.role, account):
+                raise ToolError(f"Login succeeded but credentials are still invalid for {account_id}")
+        self.authorize(account_id)
+        return "ok"
