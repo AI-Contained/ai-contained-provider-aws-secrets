@@ -5,7 +5,6 @@ from fastmcp.client import Client
 
 from ai_contained.provider.aws_secrets import register
 from ai_contained.provider.aws_secrets.accounts import Accounts
-from ai_contained.provider.aws_secrets.authenticator import AuthenticationError
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
 from ai_contained.provider.aws_secrets.types import Role
 from fastmcp.exceptions import ToolError
@@ -142,17 +141,17 @@ def describe_AwsAuthTool():
             assert_that(result.content[0].text).is_equal_to("user cancelled")
             assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_false()
 
-        async def it_raises_when_validate_raises_authentication_error(auth_setup) -> None:
+        async def it_raises_when_validate_raises_an_error(auth_setup) -> None:
             client, auth_tool, mock = auth_setup
-            mock.validate = _return_responses(AuthenticationError("wrong account"))
+            mock.validate = _return_responses(ToolError("wrong account"))
             result = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
             assert_that(result.is_error).is_true()
             assert_that(result.content[0].text).is_equal_to("wrong account")
             assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_false()
 
-        async def it_raises_when_post_login_validate_raises_authentication_error(auth_setup) -> None:
+        async def it_raises_when_post_login_validate_raises_an_error(auth_setup) -> None:
             client, auth_tool, mock = auth_setup
-            mock.validate = _return_responses(False, AuthenticationError("wrong account"))
+            mock.validate = _return_responses(False, ToolError("wrong account"))
             mock.login = _return_responses(None)
             result = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
             assert_that(result.is_error).is_true()

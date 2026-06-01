@@ -10,20 +10,16 @@ from ai_contained.provider.aws_secrets.accounts import Account
 from ai_contained.provider.aws_secrets.types import LoginType, Role
 
 
-class AuthenticationError(Exception):
-    pass
-
-
 class AuthenticatorBase(Protocol):
     async def validate(self, role: Role, account: Account) -> bool:
         # Returns True if credentials are valid and resolve to account.account_id.
         # Returns False if credentials are absent or expired.
-        # Raises AuthenticationError if credentials are valid but resolve to the wrong account.
+        # Raises ToolError if credentials are valid but resolve to the wrong account.
         ...
 
     async def login(self, ctx: Context, role: Role, account: Account) -> None:
-        # Runs the login flow for the given login type and validates afterward.
-        # Raises AuthenticationError if login is unsupported, user cancels, or post-login validation fails.
+        # Runs the login flow for the given login type.
+        # Raises ToolError if login is unsupported, user cancels, or the command fails.
         ...
 
 
@@ -43,9 +39,9 @@ class Authenticator(AuthenticatorBase):
             caller = json.loads(stdout.decode())
             resolved = caller["Account"]
         except (json.JSONDecodeError, KeyError):
-            raise AuthenticationError(f"invalid response from check_command: {stdout.decode()!r}")
+            raise ToolError(f"invalid response from check_command: {stdout.decode()!r}")
         if resolved != account.account_id:
-            raise AuthenticationError(
+            raise ToolError(
                 f"credentials resolve to '{resolved}', expected '{account.account_id}'"
             )
         return True
@@ -53,7 +49,7 @@ class Authenticator(AuthenticatorBase):
     async def login(self, ctx: Context, role: Role, account: Account) -> None:
         match account.login.type:
             case LoginType.PREAUTH:
-                raise AuthenticationError("credentials invalid — fix externally and retry")
+                raise ToolError("credentials invalid — fix externally and retry")
             case LoginType.SSO:
                 await self._login_sso(ctx, role, account)
 

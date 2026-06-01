@@ -12,7 +12,9 @@ from mcp.types import TextContent
 
 from ai_contained.core.mcp.testing import Elicitor, WrapCallToolResult
 from ai_contained.provider.aws_secrets.accounts import Account, AccountLogin
-from ai_contained.provider.aws_secrets.authenticator import Authenticator, AuthenticationError
+from fastmcp.exceptions import ToolError
+
+from ai_contained.provider.aws_secrets.authenticator import Authenticator
 from ai_contained.provider.aws_secrets.types import LoginType, Role
 
 
@@ -54,7 +56,7 @@ def describe_Authenticator():
         async def raises_when_account_id_does_not_match(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.setenv("MOCK_STS_ACCOUNT_ID", "999999999999")
             expected = make_account(account_id="123456789012", read_profile="mock-profile", check_command=mock_sts)
-            with pytest.raises(AuthenticationError) as exc_info:
+            with pytest.raises(ToolError) as exc_info:
                 await Authenticator().validate(Role.READ_ONLY, expected)
             assert_that(str(exc_info.value)).contains(f"expected '{expected.account_id}'")
 
@@ -63,7 +65,7 @@ def describe_Authenticator():
                 read_profile="mock-profile",
                 check_command="/bin/sh -c 'echo not-json; exit 0'",
             )
-            with pytest.raises(AuthenticationError) as exc_info:
+            with pytest.raises(ToolError) as exc_info:
                 await Authenticator().validate(Role.READ_ONLY, account)
             assert_that(str(exc_info.value)).contains("invalid response")
 
@@ -72,7 +74,7 @@ def describe_Authenticator():
                 read_profile="mock-profile",
                 check_command="/bin/sh -c 'echo {\"UserId\": \"foo\"}; exit 0'",
             )
-            with pytest.raises(AuthenticationError) as exc_info:
+            with pytest.raises(ToolError) as exc_info:
                 await Authenticator().validate(Role.READ_ONLY, account)
             assert_that(str(exc_info.value)).contains("invalid response")
 
@@ -88,7 +90,7 @@ def describe_Authenticator():
         def describe_preauth():
             async def raises_immediately() -> None:
                 account = make_account(read_profile="some-profile", login_type=LoginType.PREAUTH)
-                with pytest.raises(AuthenticationError) as exc_info:
+                with pytest.raises(ToolError) as exc_info:
                     await Authenticator().login(None, Role.READ_ONLY, account)  # type: ignore[arg-type]
                 assert_that(str(exc_info.value)).is_equal_to("credentials invalid — fix externally and retry")
 

@@ -1,4 +1,5 @@
 from fastmcp import Context
+from fastmcp.exceptions import ToolError
 
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.authenticator import Authenticator, AuthenticatorBase
