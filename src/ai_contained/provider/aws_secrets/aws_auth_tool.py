@@ -1,4 +1,4 @@
-from fastmcp import Context
+from fastmcp import Context, tools as mcp
 from fastmcp.exceptions import ToolError
 
 from ai_contained.provider.aws_secrets.accounts import Accounts
@@ -25,6 +25,7 @@ class AwsAuthTool:
     def revoke_all(self) -> None:
         self._authorized.clear()
 
+    @mcp.tool()
     async def authenticate(self, ctx: Context, account_id: AwsAccountId) -> str:
         account = self._accounts.get_account(account_id)
         if account is None:

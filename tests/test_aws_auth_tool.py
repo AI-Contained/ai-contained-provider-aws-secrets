@@ -141,6 +141,25 @@ def describe_AwsAuthTool():
             assert_that(result.content[0].text).is_equal_to("user cancelled")
             assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_false()
 
+        async def it_skips_login_when_credentials_are_still_valid(auth_setup) -> None:
+            client, auth_tool, mock = auth_setup
+            mock.validate = _return_responses(True, True)
+            first = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
+            assert_that(first.is_error).is_false()
+            second = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
+            assert_that(second.is_error).is_false()
+            assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_true()
+
+        async def it_re_logs_in_when_credentials_expire(auth_setup) -> None:
+            client, auth_tool, mock = auth_setup
+            mock.validate = _return_responses(True, False, True)
+            mock.login = _return_responses(None)
+            first = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
+            assert_that(first.is_error).is_false()
+            second = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
+            assert_that(second.is_error).is_false()
+            assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_true()
+
         async def it_raises_when_validate_raises_an_error(auth_setup) -> None:
             client, auth_tool, mock = auth_setup
             mock.validate = _return_responses(ToolError("wrong account"))
