@@ -37,6 +37,7 @@ def describe_AwsSecretRoute():
         client, auth_read, auth_write, mock_credentials_manager = secret_setup
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
             await client.post({"account_id": ACCOUNT_ID, "role": "ReadOnly"})
+        assert_that(exc_info.value.response.status_code).is_equal_to(403)
         assert_that(exc_info.value.response.json()).is_equal_to({
             "code": "NOT_AUTHORIZED",
             "detail": f"Call aws_auth_read('{ACCOUNT_ID}') to authenticate, then retry",
@@ -46,6 +47,7 @@ def describe_AwsSecretRoute():
         client, auth_read, auth_write, mock_credentials_manager = secret_setup
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
             await client.post({"account_id": "000000000000", "role": "ReadOnly"})
+        assert_that(exc_info.value.response.status_code).is_equal_to(404)
         assert_that(exc_info.value.response.json()).is_equal_to({
             "code": "UNKNOWN_ACCOUNT",
             "detail": "Account '000000000000' is not configured",
@@ -57,18 +59,21 @@ def describe_AwsSecretRoute():
         mock_credentials_manager.fetch_credentials = return_responses(ToolError("credentials unavailable"))
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
             await client.post({"account_id": ACCOUNT_ID, "role": "ReadOnly"})
+        assert_that(exc_info.value.response.status_code).is_equal_to(401)
         assert_that(exc_info.value.response.json()).is_equal_to({
             "code": "SESSION_EXPIRED",
             "detail": f"Call aws_auth_read('{ACCOUNT_ID}') to re-authenticate, then retry",
         })
 
-    @pytest.mark.skip(reason="malformed JSON is currently rejected by trust-server before reaching our handler — revisit")
     async def it_rejects_malformed_json(secret_setup) -> None:
         client, auth_read, auth_write, mock_credentials_manager = secret_setup
-        http = client._connection._http
-        response = await http.post("/aws/secret", content=b"not-json", headers={"content-type": "application/json"})
-        assert_that(response.status_code).is_equal_to(400)
-        assert_that(response.json()["code"]).is_equal_to("INVALID_REQUEST")
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await client.post_raw(b"not-json")
+        assert_that(exc_info.value.response.status_code).is_equal_to(400)
+        assert_that(exc_info.value.response.json()).is_equal_to({
+            "code": "INVALID_REQUEST",
+            "detail": "request body must be valid JSON",
+        })
 
     @pytest.mark.parametrize("payload,detail", [
         pytest.param({"role": "ReadOnly"}, "account_id is required", id="missing account_id"),
@@ -79,6 +84,7 @@ def describe_AwsSecretRoute():
         client, auth_read, auth_write, mock_credentials_manager = secret_setup
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
             await client.post(payload)
+        assert_that(exc_info.value.response.status_code).is_equal_to(400)
         assert_that(exc_info.value.response.json()).is_equal_to({"code": "INVALID_REQUEST", "detail": detail})
 
     async def it_dispenses_write_credentials_for_read_write_role(secret_setup) -> None:
