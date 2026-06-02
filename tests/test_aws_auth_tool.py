@@ -90,7 +90,7 @@ def describe_AwsAuthTool():
             async with Client(transport=mcp) as c:
                 yield expected, c, auth_tool, mock_credentials_manager
 
-        async def it_registers_aws_auth_read_and_aws_auth_write_tools() -> None:
+        async def it_exposes_read_and_write_tools() -> None:
             mcp = FastMCP("test")
             accounts = Accounts("""
             {
@@ -129,7 +129,7 @@ def describe_AwsAuthTool():
                 {expected.account_id: {"name": expected.name, "expires_at": expected.credential.expiration}}
             )
 
-        async def it_raises_when_post_login_validation_fails(auth_setup) -> None:
+        async def it_rejects_account_when_credentials_remain_invalid_after_login(auth_setup) -> None:
             expected, client, auth_tool, mock_credentials_manager = auth_setup
             mock_credentials_manager.validate = return_responses(False, False)
             mock_credentials_manager.login = return_responses(None)
@@ -140,7 +140,7 @@ def describe_AwsAuthTool():
             assert_that(result.content[0].text).is_equal_to(f"Login succeeded but credentials are still invalid for {expected.account_id}")
             assert_that(auth_tool.is_authorized(expected.account_id)).is_false()
 
-        async def it_raises_when_account_is_unknown(auth_setup) -> None:
+        async def it_rejects_unknown_accounts(auth_setup) -> None:
             expected, client, auth_tool, mock_credentials_manager = auth_setup
 
             result = await client.call_tool("aws_auth_read", {"account_id": "000000000000"}, raise_on_error=False)
@@ -148,7 +148,7 @@ def describe_AwsAuthTool():
             assert_that(result.is_error).is_true()
             assert_that(result.content[0].text).is_equal_to("Unknown account: 000000000000")
 
-        async def it_raises_when_login_raises_tool_error(auth_setup) -> None:
+        async def it_propagates_login_errors_to_the_caller(auth_setup) -> None:
             expected, client, auth_tool, mock_credentials_manager = auth_setup
             mock_credentials_manager.validate = return_responses(False)
             mock_credentials_manager.login = return_responses(ToolError("user cancelled"))
@@ -184,7 +184,7 @@ def describe_AwsAuthTool():
             assert_that(second.is_error).is_false()
             assert_that(auth_tool.is_authorized(expected.account_id)).is_true()
 
-        async def it_raises_when_validate_raises_an_error(auth_setup) -> None:
+        async def it_propagates_validation_errors_to_the_caller(auth_setup) -> None:
             expected, client, auth_tool, mock_credentials_manager = auth_setup
             mock_credentials_manager.validate = return_responses(ToolError("wrong account"))
 
@@ -194,7 +194,7 @@ def describe_AwsAuthTool():
             assert_that(result.content[0].text).is_equal_to("wrong account")
             assert_that(auth_tool.is_authorized(expected.account_id)).is_false()
 
-        async def it_raises_when_post_login_validate_raises_an_error(auth_setup) -> None:
+        async def it_propagates_post_login_validation_errors_to_the_caller(auth_setup) -> None:
             expected, client, auth_tool, mock_credentials_manager = auth_setup
             mock_credentials_manager.validate = return_responses(False, ToolError("wrong account"))
             mock_credentials_manager.login = return_responses(None)
