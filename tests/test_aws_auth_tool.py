@@ -19,48 +19,65 @@ from conftest import MockCredentialsManager, return_responses
 
 def describe_AwsAuthTool():
     def describe_is_authorized():
-        def it_returns_false_by_default(aws_auth_read: AwsAuthTool) -> None:
-            assert_that(aws_auth_read.is_authorized("123456789012")).is_false()
+        ACCOUNT_ID = "123456789012"
 
-        def it_returns_false_after_revoke(aws_auth_read: AwsAuthTool) -> None:
-            aws_auth_read.authorize("123456789012")
-            assert_that(aws_auth_read.is_authorized("123456789012")).is_true()
-            aws_auth_read.revoke("123456789012")
-            assert_that(aws_auth_read.is_authorized("123456789012")).is_false()
+        @pytest.fixture
+        def auth_tool():
+            return AwsAuthTool(Role.READ_ONLY, Accounts('{ login: { type: "sso" }, accounts: {} }'))
 
-        def it_returns_false_after_revoke_all(aws_auth_read: AwsAuthTool) -> None:
-            aws_auth_read.authorize("123456789012")
-            assert_that(aws_auth_read.is_authorized("123456789012")).is_true()
-            aws_auth_read.revoke_all()
-            assert_that(aws_auth_read.is_authorized("123456789012")).is_false()
+        def it_returns_false_by_default(auth_tool: AwsAuthTool) -> None:
+            assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_false()
 
-        def it_is_idempotent_when_authorizing_twice(aws_auth_read: AwsAuthTool) -> None:
-            aws_auth_read.authorize("123456789012")
-            aws_auth_read.authorize("123456789012")
-            assert_that(aws_auth_read.is_authorized("123456789012")).is_true()
+        def it_returns_false_after_revoke(auth_tool: AwsAuthTool) -> None:
+            auth_tool.authorize(ACCOUNT_ID)
+            assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_true()
+
+            auth_tool.revoke(ACCOUNT_ID)
+            assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_false()
+
+        def it_returns_false_after_revoke_all(auth_tool: AwsAuthTool) -> None:
+            auth_tool.authorize(ACCOUNT_ID)
+            assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_true()
+
+            auth_tool.revoke_all()
+            assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_false()
+
+        def it_is_idempotent_when_authorizing_twice(auth_tool: AwsAuthTool) -> None:
+            auth_tool.authorize(ACCOUNT_ID)
+            auth_tool.authorize(ACCOUNT_ID)
+            assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_true()
 
     def describe_revoke():
-        def it_does_not_raise_when_revoking_unknown_account(aws_auth_read: AwsAuthTool) -> None:
-            aws_auth_read.revoke("123456789012")
-            assert_that(aws_auth_read.is_authorized("123456789012")).is_false()
+        ACCOUNT_A = "123456789012"
+        ACCOUNT_B = "456789012345"
 
-        def it_only_revokes_target_account(aws_auth_read: AwsAuthTool) -> None:
-            aws_auth_read.authorize("123456789012")
-            aws_auth_read.authorize("456789012345")
-            assert_that(aws_auth_read.is_authorized("123456789012")).is_true()
-            assert_that(aws_auth_read.is_authorized("456789012345")).is_true()
-            aws_auth_read.revoke("123456789012")
-            assert_that(aws_auth_read.is_authorized("123456789012")).is_false()
-            assert_that(aws_auth_read.is_authorized("456789012345")).is_true()
+        @pytest.fixture
+        def auth_tool():
+            return AwsAuthTool(Role.READ_ONLY, Accounts('{ login: { type: "sso" }, accounts: {} }'))
 
-        def it_revoke_all_clears_all_accounts(aws_auth_read: AwsAuthTool) -> None:
-            aws_auth_read.authorize("123456789012")
-            aws_auth_read.authorize("456789012345")
-            assert_that(aws_auth_read.is_authorized("123456789012")).is_true()
-            assert_that(aws_auth_read.is_authorized("456789012345")).is_true()
-            aws_auth_read.revoke_all()
-            assert_that(aws_auth_read.is_authorized("123456789012")).is_false()
-            assert_that(aws_auth_read.is_authorized("456789012345")).is_false()
+        def it_does_not_raise_when_revoking_unknown_account(auth_tool: AwsAuthTool) -> None:
+            auth_tool.revoke(ACCOUNT_A)
+            assert_that(auth_tool.is_authorized(ACCOUNT_A)).is_false()
+
+        def it_only_revokes_target_account(auth_tool: AwsAuthTool) -> None:
+            auth_tool.authorize(ACCOUNT_A)
+            auth_tool.authorize(ACCOUNT_B)
+            assert_that(auth_tool.is_authorized(ACCOUNT_A)).is_true()
+            assert_that(auth_tool.is_authorized(ACCOUNT_B)).is_true()
+
+            auth_tool.revoke(ACCOUNT_A)
+            assert_that(auth_tool.is_authorized(ACCOUNT_A)).is_false()
+            assert_that(auth_tool.is_authorized(ACCOUNT_B)).is_true()
+
+        def it_revoke_all_clears_all_accounts(auth_tool: AwsAuthTool) -> None:
+            auth_tool.authorize(ACCOUNT_A)
+            auth_tool.authorize(ACCOUNT_B)
+            assert_that(auth_tool.is_authorized(ACCOUNT_A)).is_true()
+            assert_that(auth_tool.is_authorized(ACCOUNT_B)).is_true()
+
+            auth_tool.revoke_all()
+            assert_that(auth_tool.is_authorized(ACCOUNT_A)).is_false()
+            assert_that(auth_tool.is_authorized(ACCOUNT_B)).is_false()
 
     def describe_authenticate():
         @dataclass
