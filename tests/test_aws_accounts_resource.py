@@ -27,6 +27,14 @@ def describe_AwsAccountsResource():
     def account_id():
         return "123456789012"
 
+    @pytest.fixture
+    def aws_auth_read() -> AwsAuthTool:
+        return AwsAuthTool(Role.READ_ONLY, Accounts('{ login: { type: "sso" }, accounts: {} }'))
+
+    @pytest.fixture
+    def aws_auth_write() -> AwsAuthTool:
+        return AwsAuthTool(Role.READ_WRITE, Accounts('{ login: { type: "sso" }, accounts: {} }'))
+
 
 
     def describe_convert():
