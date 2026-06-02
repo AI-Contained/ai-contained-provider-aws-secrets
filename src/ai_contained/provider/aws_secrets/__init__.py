@@ -4,10 +4,13 @@ import os
 
 from fastmcp import FastMCP
 
+from ai_contained.trust import server as trust_server
+
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManager
 from ai_contained.provider.aws_secrets.aws_accounts_resource import AwsAccountsResource
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
+from ai_contained.provider.aws_secrets.aws_secret_route import AwsSecretRoute
 from ai_contained.provider.aws_secrets.types import Role
 
 
@@ -37,3 +40,6 @@ async def register(
     mcp.add_resource(AwsAccountsResource(_accounts, auth_read, auth_write).get)
     mcp.tool(name="aws_auth_read")(auth_read.authenticate)
     mcp.tool(name="aws_auth_write")(auth_write.authenticate)
+
+    aws_secret_route = AwsSecretRoute(auth_read, auth_write)
+    trust_server.secret_route(mcp, role="aws")(aws_secret_route.handle)
