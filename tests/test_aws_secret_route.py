@@ -56,10 +56,23 @@ def describe_AwsSecretRoute():
         assert_that(exc_info.value.response.status_code).is_equal_to(401)
         assert_that(exc_info.value.response.json()["code"]).is_equal_to("SESSION_EXPIRED")
 
-    async def it_rejects_invalid_roles(secret_setup) -> None:
+    @pytest.mark.skip(reason="malformed JSON is currently rejected by trust-server before reaching our handler — revisit")
+    async def it_rejects_malformed_json(secret_setup) -> None:
+        client, auth_read, auth_write, mock_credentials_manager = secret_setup
+        http = client._connection._http
+        response = await http.post("/aws/secret", content=b"not-json", headers={"content-type": "application/json"})
+        assert_that(response.status_code).is_equal_to(400)
+        assert_that(response.json()["code"]).is_equal_to("INVALID_REQUEST")
+
+    @pytest.mark.parametrize("payload", [
+        pytest.param({"role": "ReadOnly"}, id="missing account_id"),
+        pytest.param({"account_id": ACCOUNT_ID}, id="missing role"),
+        pytest.param({"account_id": ACCOUNT_ID, "role": "SuperAdmin"}, id="invalid role"),
+    ])
+    async def it_rejects_invalid_requests(secret_setup, payload) -> None:
         client, auth_read, auth_write, mock_credentials_manager = secret_setup
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            await client.post({"account_id": ACCOUNT_ID, "role": "SuperAdmin"})
+            await client.post(payload)
         assert_that(exc_info.value.response.status_code).is_equal_to(400)
         assert_that(exc_info.value.response.json()["code"]).is_equal_to("INVALID_REQUEST")
 
