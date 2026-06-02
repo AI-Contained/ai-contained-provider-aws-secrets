@@ -79,6 +79,28 @@ def describe_AwsAuthTool():
             assert_that(auth_tool.is_authorized(ACCOUNT_A)).is_false()
             assert_that(auth_tool.is_authorized(ACCOUNT_B)).is_false()
 
+    def describe_register():
+        async def it_registers_nothing_when_no_config_path_is_set() -> None:
+            mcp = FastMCP("test")
+
+            await register(mcp)
+
+            assert_that(await mcp.list_tools()).is_empty()
+
+        async def it_exposes_read_and_write_tools() -> None:
+            mcp = FastMCP("test")
+            accounts = Accounts("""
+            {
+                login: { type: "sso" },
+                accounts: { "123456789012": { name: "Test", read_profile: "test-read" } },
+            }
+            """)
+
+            await register(mcp, _accounts=accounts)
+
+            tool_names = [t.name for t in await mcp.list_tools()]
+            assert_that(tool_names).contains("aws_auth_read", "aws_auth_write")
+
     def describe_authenticate():
         @dataclass
         class Expected:
@@ -106,18 +128,6 @@ def describe_AwsAuthTool():
             await register(mcp, _accounts=accounts, _auth_read=auth_tool)
             async with Client(transport=mcp) as c:
                 yield expected, c, auth_tool, mock_credentials_manager
-
-        async def it_exposes_read_and_write_tools() -> None:
-            mcp = FastMCP("test")
-            accounts = Accounts("""
-            {
-                login: { type: "sso" },
-                accounts: { "123456789012": { name: "Test", read_profile: "test-read" } },
-            }
-            """)
-            await register(mcp, _accounts=accounts)
-            tool_names = [t.name for t in await mcp.list_tools()]
-            assert_that(tool_names).contains("aws_auth_read", "aws_auth_write")
 
         async def it_authorizes_when_already_validated(auth_setup) -> None:
             expected, client, auth_tool, mock_credentials_manager = auth_setup
