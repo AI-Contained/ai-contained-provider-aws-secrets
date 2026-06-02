@@ -65,16 +65,6 @@ def describe_AwsSecretRoute():
             "detail": f"Call aws_auth_read('{ACCOUNT_ID}') to re-authenticate, then retry",
         })
 
-    async def it_rejects_malformed_json(secret_setup) -> None:
-        client, auth_read, auth_write, mock_credentials_manager = secret_setup
-        with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            await client.post_raw(b"not-json")
-        assert_that(exc_info.value.response.status_code).is_equal_to(400)
-        assert_that(exc_info.value.response.json()).is_equal_to({
-            "code": "INVALID_REQUEST",
-            "detail": "request body must be valid JSON",
-        })
-
     @pytest.mark.parametrize("payload,detail", [
         pytest.param({"role": "ReadOnly"}, "account_id is required", id="missing account_id"),
         pytest.param({"account_id": ACCOUNT_ID}, "role must be 'ReadOnly' or 'ReadWrite'", id="missing role"),

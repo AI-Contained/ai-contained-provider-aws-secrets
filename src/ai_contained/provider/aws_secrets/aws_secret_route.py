@@ -1,4 +1,5 @@
 import dataclasses
+from typing import Any
 
 from fastmcp.exceptions import ToolError
 from starlette.requests import Request
@@ -13,12 +14,7 @@ class AwsSecretRoute:
         self._auth_read = auth_read
         self._auth_write = auth_write
 
-    async def handle(self, request: Request) -> Response:
-        try:
-            body = await request.json()
-        except Exception:
-            return JSONResponse({"code": "INVALID_REQUEST", "detail": "request body must be valid JSON"}, status_code=400)
-
+    async def handle(self, request: Request, body: dict[str, Any]) -> Response:
         account_id = body.get("account_id")
         if account_id is None:
             return JSONResponse({"code": "INVALID_REQUEST", "detail": "account_id is required"}, status_code=400)
