@@ -26,6 +26,7 @@ def make_account(
     login_type: LoginType = LoginType.PREAUTH,
     command: str | None = None,
     check_command: str | None = None,
+    fetch_command: str | None = None,
 ) -> Account:
     return Account(
         account_id=account_id,
@@ -33,7 +34,7 @@ def make_account(
         trust_groups=[],
         read_profile=read_profile,
         write_profile=write_profile,
-        login=AccountLogin(type=login_type, command=command, check_command=check_command),
+        login=AccountLogin(type=login_type, command=command, check_command=check_command, fetch_command=fetch_command),
     )
 
 
@@ -79,6 +80,37 @@ def describe_Authenticator():
             assert_that(str(exc_info.value)).contains("invalid response")
 
 
+
+    def describe_fetch_credentials():
+        mock_export = str(Path(__file__).parent / "bin" / "mock_aws_export.sh")
+
+        async def returns_credential_with_env_and_expiration(monkeypatch: pytest.MonkeyPatch) -> None:
+            expected_env = {
+                "AWS_ACCESS_KEY_ID": "AKID123",
+                "AWS_SECRET_ACCESS_KEY": "SECRET123",
+                "AWS_SESSION_TOKEN": "TOKEN123"
+            }
+            expected_expiration = "2026-06-01T11:12:44+00:00"
+            monkeypatch.setenv("MOCK_EXPORT_ACCESS_KEY_ID", expected_env["AWS_ACCESS_KEY_ID"])
+            monkeypatch.setenv("MOCK_EXPORT_SECRET_ACCESS_KEY", expected_env["AWS_SECRET_ACCESS_KEY"])
+            monkeypatch.setenv("MOCK_EXPORT_SESSION_TOKEN", expected_env["AWS_SESSION_TOKEN"])
+            monkeypatch.setenv("MOCK_EXPORT_EXPIRATION", expected_expiration)
+            account = make_account(read_profile="mock-profile", fetch_command=mock_export)
+            result = await Authenticator().fetch_credentials(Role.READ_ONLY, account)
+            assert_that(result.env).is_equal_to(expected_env)
+            assert_that(result.expiration).is_equal_to(expected_expiration)
+
+        async def returns_none_expiration_when_not_present(monkeypatch: pytest.MonkeyPatch) -> None:
+            monkeypatch.setenv("MOCK_EXPORT_INCLUDE_EXPIRATION", "0")
+            account = make_account(read_profile="mock-profile", fetch_command=mock_export)
+            result = await Authenticator().fetch_credentials(Role.READ_ONLY, account)
+            assert_that(result.expiration).is_none()
+
+        async def raises_when_command_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
+            monkeypatch.setenv("MOCK_EXPORT_EXIT_CODE", "1")
+            account = make_account(read_profile="mock-profile", fetch_command=mock_export)
+            with pytest.raises(ToolError):
+                await Authenticator().fetch_credentials(Role.READ_ONLY, account)
 
     def describe_login():
         @pytest.fixture

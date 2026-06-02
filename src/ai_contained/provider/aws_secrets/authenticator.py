@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from dataclasses import dataclass
 from typing import Protocol, assert_never
 
 from fastmcp import Context
@@ -8,6 +9,12 @@ from fastmcp.exceptions import ToolError
 
 from ai_contained.provider.aws_secrets.accounts import Account
 from ai_contained.provider.aws_secrets.types import LoginType, Role
+
+
+@dataclass
+class Credential:
+    env: dict[str, str]
+    expiration: str | None
 
 
 class AuthenticatorBase(Protocol):
@@ -20,6 +27,11 @@ class AuthenticatorBase(Protocol):
     async def login(self, ctx: Context, role: Role, account: Account) -> None:
         # Runs the login flow for the given login type.
         # Raises ToolError if login is unsupported, user cancels, or the command fails.
+        ...
+
+    async def fetch_credentials(self, role: Role, account: Account) -> Credential:
+        # Fetches current credentials for the account.
+        # Raises ToolError if credentials are expired or unavailable.
         ...
 
 
@@ -45,6 +57,24 @@ class Authenticator(AuthenticatorBase):
                 f"credentials resolve to '{resolved}', expected '{account.account_id}'"
             )
         return True
+
+    async def fetch_credentials(self, role: Role, account: Account) -> Credential:
+        command = account.login.fetch_command or "aws configure export-credentials --format env"
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            raise ToolError(f"credentials unavailable for {account.account_id}")
+        env = {}
+        for line in stdout.decode().splitlines():
+            key, _, value = line.removeprefix("export ").partition("=")
+            env[key] = value
+        expiration = env.pop("AWS_CREDENTIAL_EXPIRATION", None)
+        return Credential(env=env, expiration=expiration)
 
     async def login(self, ctx: Context, role: Role, account: Account) -> None:
         match account.login.type:

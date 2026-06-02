@@ -13,6 +13,7 @@ class AccountLogin:
     command: str | None
     # Must exit non-zero on invalid credentials, and output JSON with an "Account" key on success.
     check_command: str | None = None
+    fetch_command: str | None = None
 
 
 @dataclass
