@@ -2,12 +2,12 @@ from fastmcp import Context, tools as mcp
 from fastmcp.exceptions import ToolError
 
 from ai_contained.provider.aws_secrets.accounts import Accounts
-from ai_contained.provider.aws_secrets.authenticator import Authenticator, AuthenticatorBase
+from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManager, CredentialsManagerBase
 from ai_contained.provider.aws_secrets.types import AwsAccountId, Role
 
 
 class AwsAuthTool:
-    def __init__(self, role: Role, accounts: Accounts, authenticator: AuthenticatorBase = Authenticator()) -> None:
+    def __init__(self, role: Role, accounts: Accounts, authenticator: CredentialsManagerBase = CredentialsManager()) -> None:
         self.role = role
         self.accounts = accounts
         self.authenticator = authenticator

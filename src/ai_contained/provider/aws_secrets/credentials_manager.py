@@ -17,7 +17,7 @@ class Credential:
     expiration: str | None
 
 
-class AuthenticatorBase(Protocol):
+class CredentialsManagerBase(Protocol):
     async def validate(self, role: Role, account: Account) -> bool:
         # Returns True if credentials are valid and resolve to account.account_id.
         # Returns False if credentials are absent or expired.
@@ -35,7 +35,7 @@ class AuthenticatorBase(Protocol):
         ...
 
 
-class Authenticator(AuthenticatorBase):
+class CredentialsManager(CredentialsManagerBase):
     async def validate(self, role: Role, account: Account) -> bool:
         command = account.login.check_command or "aws sts get-caller-identity --output json"
         proc = await asyncio.create_subprocess_shell(

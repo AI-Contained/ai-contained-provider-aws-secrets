@@ -14,7 +14,7 @@ from ai_contained.core.mcp.testing import Elicitor, WrapCallToolResult
 from ai_contained.provider.aws_secrets.accounts import Account, AccountLogin
 from fastmcp.exceptions import ToolError
 
-from ai_contained.provider.aws_secrets.authenticator import Authenticator
+from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManager
 from ai_contained.provider.aws_secrets.types import LoginType, Role
 
 
@@ -38,27 +38,27 @@ def make_account(
     )
 
 
-def describe_Authenticator():
+def describe_CredentialsManager():
     def describe_validate():
         mock_sts = str(Path(__file__).parent / "bin" / "mock_aws_sts.sh")
 
         async def returns_false_when_command_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.setenv("MOCK_STS_EXIT_CODE", "1")
             expected = make_account(read_profile="mock-profile", check_command=mock_sts)
-            result = await Authenticator().validate(Role.READ_ONLY, expected)
+            result = await CredentialsManager().validate(Role.READ_ONLY, expected)
             assert_that(result).is_false()
 
         async def returns_true_when_account_id_matches(monkeypatch: pytest.MonkeyPatch) -> None:
             expected = make_account(account_id="123456789012", read_profile="mock-profile", check_command=mock_sts)
             monkeypatch.setenv("MOCK_STS_ACCOUNT_ID", expected.account_id)
-            result = await Authenticator().validate(Role.READ_ONLY, expected)
+            result = await CredentialsManager().validate(Role.READ_ONLY, expected)
             assert_that(result).is_true()
 
         async def raises_when_account_id_does_not_match(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.setenv("MOCK_STS_ACCOUNT_ID", "999999999999")
             expected = make_account(account_id="123456789012", read_profile="mock-profile", check_command=mock_sts)
             with pytest.raises(ToolError) as exc_info:
-                await Authenticator().validate(Role.READ_ONLY, expected)
+                await CredentialsManager().validate(Role.READ_ONLY, expected)
             assert_that(str(exc_info.value)).contains(f"expected '{expected.account_id}'")
 
         async def raises_when_response_is_not_valid_json() -> None:
@@ -67,7 +67,7 @@ def describe_Authenticator():
                 check_command="/bin/sh -c 'echo not-json; exit 0'",
             )
             with pytest.raises(ToolError) as exc_info:
-                await Authenticator().validate(Role.READ_ONLY, account)
+                await CredentialsManager().validate(Role.READ_ONLY, account)
             assert_that(str(exc_info.value)).contains("invalid response")
 
         async def raises_when_response_is_missing_account_key() -> None:
@@ -76,7 +76,7 @@ def describe_Authenticator():
                 check_command="/bin/sh -c 'echo {\"UserId\": \"foo\"}; exit 0'",
             )
             with pytest.raises(ToolError) as exc_info:
-                await Authenticator().validate(Role.READ_ONLY, account)
+                await CredentialsManager().validate(Role.READ_ONLY, account)
             assert_that(str(exc_info.value)).contains("invalid response")
 
 
@@ -96,21 +96,21 @@ def describe_Authenticator():
             monkeypatch.setenv("MOCK_EXPORT_SESSION_TOKEN", expected_env["AWS_SESSION_TOKEN"])
             monkeypatch.setenv("MOCK_EXPORT_EXPIRATION", expected_expiration)
             account = make_account(read_profile="mock-profile", fetch_command=mock_export)
-            result = await Authenticator().fetch_credentials(Role.READ_ONLY, account)
+            result = await CredentialsManager().fetch_credentials(Role.READ_ONLY, account)
             assert_that(result.env).is_equal_to(expected_env)
             assert_that(result.expiration).is_equal_to(expected_expiration)
 
         async def returns_none_expiration_when_not_present(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.setenv("MOCK_EXPORT_INCLUDE_EXPIRATION", "0")
             account = make_account(read_profile="mock-profile", fetch_command=mock_export)
-            result = await Authenticator().fetch_credentials(Role.READ_ONLY, account)
+            result = await CredentialsManager().fetch_credentials(Role.READ_ONLY, account)
             assert_that(result.expiration).is_none()
 
         async def raises_when_command_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.setenv("MOCK_EXPORT_EXIT_CODE", "1")
             account = make_account(read_profile="mock-profile", fetch_command=mock_export)
             with pytest.raises(ToolError):
-                await Authenticator().fetch_credentials(Role.READ_ONLY, account)
+                await CredentialsManager().fetch_credentials(Role.READ_ONLY, account)
 
     def describe_login():
         @pytest.fixture
@@ -123,7 +123,7 @@ def describe_Authenticator():
             async def raises_immediately() -> None:
                 account = make_account(read_profile="some-profile", login_type=LoginType.PREAUTH)
                 with pytest.raises(ToolError) as exc_info:
-                    await Authenticator().login(None, Role.READ_ONLY, account)  # type: ignore[arg-type]
+                    await CredentialsManager().login(None, Role.READ_ONLY, account)  # type: ignore[arg-type]
                 assert_that(str(exc_info.value)).is_equal_to("credentials invalid — fix externally and retry")
 
         def describe_sso():
@@ -157,11 +157,11 @@ def describe_Authenticator():
             @pytest.fixture
             async def client(elicitor: Elicitor, mock_account: Account) -> AsyncGenerator[Client[FastMCPTransport], None]:
                 server = FastMCP("test")
-                authenticator = Authenticator()
+                credentials_manager = CredentialsManager()
 
                 @server.tool()
                 async def fake_login(ctx: Context) -> str:
-                    await authenticator.login(ctx, Role.READ_ONLY, mock_account)
+                    await credentials_manager.login(ctx, Role.READ_ONLY, mock_account)
                     return "ok"
 
                 async with Client(transport=server, elicitation_handler=elicitor) as c:
@@ -177,7 +177,7 @@ def describe_Authenticator():
 
                 @server.tool()
                 async def fake_login(ctx: Context) -> str:
-                    await Authenticator().login(ctx, Role.READ_ONLY, account)
+                    await CredentialsManager().login(ctx, Role.READ_ONLY, account)
                     return "ok"
 
                 async with Client(transport=server, elicitation_handler=elicitor) as c:
@@ -202,7 +202,7 @@ def describe_Authenticator():
 
                 @server.tool()
                 async def fake_login(ctx: Context) -> str:
-                    await Authenticator().login(ctx, Role.READ_ONLY, account)
+                    await CredentialsManager().login(ctx, Role.READ_ONLY, account)
                     return "ok"
 
                 async with Client(transport=server, elicitation_handler=elicitor) as c:

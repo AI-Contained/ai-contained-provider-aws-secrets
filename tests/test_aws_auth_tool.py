@@ -67,7 +67,7 @@ def describe_AwsAuthTool():
                 return val
             return _fn
 
-        class MockAuthenticator:
+        class MockCredentialsManager:
             async def validate(self, role, account):
                 raise NotImplementedError("set mock.validate = _return_responses(...)")
 
@@ -83,7 +83,7 @@ def describe_AwsAuthTool():
 
         @pytest.fixture
         async def auth_setup(accounts: Accounts):
-            mock = MockAuthenticator()
+            mock = MockCredentialsManager()
             auth_tool = AwsAuthTool(Role.READ_ONLY, accounts, mock)
             mcp = FastMCP("test")
             await register(mcp, _accounts=accounts, _auth_read=auth_tool)
