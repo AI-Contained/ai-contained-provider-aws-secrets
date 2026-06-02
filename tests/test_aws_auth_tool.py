@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from assertpy import assert_that
 from fastmcp import FastMCP
@@ -7,9 +9,15 @@ from fastmcp.exceptions import ToolError
 from ai_contained.provider.aws_secrets import register
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
+from ai_contained.provider.aws_secrets.credentials_manager import Credential
 from ai_contained.provider.aws_secrets.types import Role
 
 from conftest import ACCOUNT_ID, MockCredentialsManager, return_responses
+
+EXPECTED_CREDENTIAL = Credential(
+    env={"AWS_ACCESS_KEY_ID": "AKID", "AWS_SECRET_ACCESS_KEY": "SECRET", "AWS_SESSION_TOKEN": "TOKEN"},
+    expiration="2026-06-01T11:12:44+00:00",
+)
 
 
 def describe_AwsAuthTool():
@@ -82,17 +90,25 @@ def describe_AwsAuthTool():
         async def it_authorizes_when_already_validated(auth_setup) -> None:
             client, auth_tool, mock_credentials_manager = auth_setup
             mock_credentials_manager.validate = return_responses(True)
+            mock_credentials_manager.fetch_credentials = return_responses(EXPECTED_CREDENTIAL)
             result = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
             assert_that(result.is_error).is_false()
             assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_true()
+            assert_that(json.loads(result.content[0].text)).is_equal_to(
+                {ACCOUNT_ID: {"name": "Test", "expires_at": EXPECTED_CREDENTIAL.expiration}}
+            )
 
         async def it_logs_in_when_not_validated(auth_setup) -> None:
             client, auth_tool, mock_credentials_manager = auth_setup
             mock_credentials_manager.validate = return_responses(False, True)
             mock_credentials_manager.login = return_responses(None)
+            mock_credentials_manager.fetch_credentials = return_responses(EXPECTED_CREDENTIAL)
             result = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
             assert_that(result.is_error).is_false()
             assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_true()
+            assert_that(json.loads(result.content[0].text)).is_equal_to(
+                {ACCOUNT_ID: {"name": "Test", "expires_at": EXPECTED_CREDENTIAL.expiration}}
+            )
 
         async def it_raises_when_post_login_validation_fails(auth_setup) -> None:
             client, auth_tool, mock_credentials_manager = auth_setup
@@ -121,6 +137,7 @@ def describe_AwsAuthTool():
         async def it_skips_login_when_credentials_are_still_valid(auth_setup) -> None:
             client, auth_tool, mock_credentials_manager = auth_setup
             mock_credentials_manager.validate = return_responses(True, True)
+            mock_credentials_manager.fetch_credentials = return_responses(EXPECTED_CREDENTIAL, EXPECTED_CREDENTIAL)
             first = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
             assert_that(first.is_error).is_false()
             second = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
@@ -131,6 +148,7 @@ def describe_AwsAuthTool():
             client, auth_tool, mock_credentials_manager = auth_setup
             mock_credentials_manager.validate = return_responses(True, False, True)
             mock_credentials_manager.login = return_responses(None)
+            mock_credentials_manager.fetch_credentials = return_responses(EXPECTED_CREDENTIAL, EXPECTED_CREDENTIAL)
             first = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)
             assert_that(first.is_error).is_false()
             second = await client.call_tool("aws_auth_read", {"account_id": ACCOUNT_ID}, raise_on_error=False)

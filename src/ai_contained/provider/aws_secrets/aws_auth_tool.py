@@ -26,7 +26,7 @@ class AwsAuthTool:
         self._authorized.clear()
 
     @mcp.tool()
-    async def authenticate(self, ctx: Context, account_id: AwsAccountId) -> str:
+    async def authenticate(self, ctx: Context, account_id: AwsAccountId) -> dict:
         account = self.accounts.get_account(account_id)
         if account is None:
             raise ToolError(f"Unknown account: {account_id}")
@@ -35,4 +35,5 @@ class AwsAuthTool:
             if not await self.authenticator.validate(self.role, account):
                 raise ToolError(f"Login succeeded but credentials are still invalid for {account_id}")
         self.authorize(account_id)
-        return "ok"
+        credential = await self.authenticator.fetch_credentials(self.role, account)
+        return {account_id: {"name": account.name, "expires_at": credential.expiration}}
