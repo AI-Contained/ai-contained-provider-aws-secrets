@@ -30,6 +30,15 @@ class AwsAuthTool:
         account = self.accounts.get_account(account_id)
         if account is None:
             raise ToolError(f"Unknown account: {account_id}")
+        if not self.is_authorized(account_id):
+            role_label = "ReadOnly" if self.role == Role.READ_ONLY else "ReadWrite"
+            tool_name = "aws_auth_read" if self.role == Role.READ_ONLY else "aws_auth_write"
+            result = await ctx.elicit(
+                message=f"I'd like {role_label} AWS Access to {account.name} ({account_id}). (using tool: {tool_name})",
+                response_type=None,
+            )
+            if result.action != "accept":
+                raise ToolError(f"Access to {tool_name}({account.name}) was declined")
         if not await self.authenticator.validate(self.role, account):
             await self.authenticator.login(ctx, self.role, account)
             if not await self.authenticator.validate(self.role, account):
