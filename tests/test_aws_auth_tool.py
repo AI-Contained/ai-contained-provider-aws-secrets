@@ -180,6 +180,16 @@ def describe_AwsAuthTool():
             assert_that(result.content[0].text).is_equal_to(f"Login succeeded but credentials are still invalid for {expected.account_id}")
             assert_that(auth_tool.is_authorized(expected.account_id)).is_false()
 
+        async def it_raises_when_user_declines_access(auth_setup) -> None:
+            expected, client, auth_tool, mock = auth_setup
+            mock.elicitor.decline(expect_message=expected.auth_prompt())
+
+            result = await client.call_tool("aws_auth_read", {"account_id": expected.account_id}, raise_on_error=False)
+
+            assert_that(result.is_error).is_true()
+            assert_that(result.content[0].text).is_equal_to(f"Access to aws_auth_read({expected.name}) was declined")
+            assert_that(auth_tool.is_authorized(expected.account_id)).is_false()
+
         async def it_rejects_unknown_accounts(auth_setup) -> None:
             expected, client, auth_tool, mock = auth_setup
 
