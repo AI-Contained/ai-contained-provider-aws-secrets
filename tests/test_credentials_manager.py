@@ -265,7 +265,7 @@ def describe_CredentialsManager():
                     assert_that(msg).is_equal_to(LOOP_ELICITATION_MESSAGE)
                     # Signal to the mock SSO script that authorization is complete.
                     with open(str(fifo), "w") as f:
-                       f.write("done\n")
+                        f.write("done\n")
                     return ("accept", None)
 
                 elicitor.on_elicit(accept_and_unblock)
