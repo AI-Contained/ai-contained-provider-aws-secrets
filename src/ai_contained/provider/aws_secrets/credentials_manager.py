@@ -3,8 +3,10 @@
 import asyncio
 import json
 import os
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Protocol, assert_never
+from typing import Any, Protocol, assert_never
 
 from fastmcp import Context
 from fastmcp.exceptions import ToolError
@@ -40,16 +42,38 @@ class CredentialsManagerBase(Protocol):
 class CredentialsManager(CredentialsManagerBase):
     """Real AWS credentials manager that shells out to the AWS CLI."""
 
+    @staticmethod
+    @asynccontextmanager
+    async def managed_shell(
+        cmd: str, **kwargs: Any
+    ) -> AsyncGenerator[asyncio.subprocess.Process, None]:
+        """Run a shell command and guarantee cleanup on exit.
+
+        Yields the Process. On exit (normal or exception), sends SIGTERM and
+        waits up to 5 seconds; escalates to SIGKILL if the process doesn't stop.
+        """
+        proc = await asyncio.create_subprocess_shell(cmd, **kwargs)
+        try:
+            yield proc
+        finally:
+            if proc.returncode is None:
+                proc.terminate()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+
     async def validate(self, role: Role, account: Account) -> bool:
         """Check credentials via sts get-caller-identity (or check_command)."""
         command = account.login.check_command or "aws sts get-caller-identity --output json"
-        proc = await asyncio.create_subprocess_shell(
+        async with self.managed_shell(
             command,
             env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await proc.communicate()
+        ) as proc:
+            stdout, _ = await proc.communicate()
         if proc.returncode != 0:
             return False
         try:
@@ -64,13 +88,13 @@ class CredentialsManager(CredentialsManagerBase):
     async def fetch_credentials(self, role: Role, account: Account) -> Credential:
         """Export current credentials as env vars via the AWS CLI."""
         command = account.login.fetch_command or "aws configure export-credentials --format env"
-        proc = await asyncio.create_subprocess_shell(
+        async with self.managed_shell(
             command,
             env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await proc.communicate()
+        ) as proc:
+            stdout, _ = await proc.communicate()
         if proc.returncode != 0:
             raise ToolError(f"credentials unavailable for {account.account_id}")
         env = {}
@@ -102,58 +126,59 @@ class CredentialsManager(CredentialsManagerBase):
         )
         command = account.login.command or "aws sso login --no-browser --use-device-code"
 
-        proc = await asyncio.create_subprocess_shell(
+        async with self.managed_shell(
             command,
             env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-        )
-        assert proc.stdout is not None
-        assert proc.stderr is not None
+        ) as proc:
+            assert proc.stdout is not None
+            assert proc.stderr is not None
 
-        # Two exit conditions: https_count == 2 (got both URLs, process still running)
-        # or eof (process exited early — drain whatever stdout was buffered).
-        https_count = 0
-        captured_stdout = []
-        eof = False
-        while https_count < 2 and not eof:
-            line = await proc.stdout.readline()
-            eof = line == b""
-            if not eof:
-                decoded = line.decode()
-                captured_stdout.append(decoded)
-                if decoded.startswith("https://"):
-                    https_count += 1
+            # Two exit conditions: https_count == 2 (got both URLs, process still running)
+            # or eof (process exited early — drain whatever stdout was buffered).
+            https_count = 0
+            captured_stdout = []
+            eof = False
+            while https_count < 2 and not eof:
+                line = await proc.stdout.readline()
+                eof = line == b""
+                if not eof:
+                    decoded = line.decode()
+                    captured_stdout.append(decoded)
+                    if decoded.startswith("https://"):
+                        https_count += 1
 
-        if eof and https_count != 2:
-            raise ToolError(
-                json.dumps(
-                    {
-                        "exit_status": str(proc.returncode),
-                        "stderr": (await proc.stderr.read()).decode(),
-                        "stdout": "".join(captured_stdout),
-                    }
+            if eof and https_count != 2:
+                raise ToolError(
+                    json.dumps(
+                        {
+                            "exit_status": str(proc.returncode),
+                            "stderr": (await proc.stderr.read()).decode(),
+                            "stdout": "".join(captured_stdout),
+                        }
+                    )
                 )
-            )
 
-        result = await ctx.elicit(message="".join(captured_stdout), response_type=None)
-        if result.action != "accept":
-            proc.kill()
-            raise ToolError(f"The user has cancelled the login request to {account.name} ({account.account_id})")
-
-        while proc.returncode is None:
-            result = await ctx.elicit(message=loop_message, response_type=None)
+            result = await ctx.elicit(message="".join(captured_stdout), response_type=None)
             if result.action != "accept":
-                proc.kill()
                 raise ToolError(f"The user has cancelled the login request to {account.name} ({account.account_id})")
 
-        if proc.returncode != 0:
-            raise ToolError(
-                json.dumps(
-                    {
-                        "exit_status": str(proc.returncode),
-                        "stderr": (await proc.stderr.read()).decode(),
-                        "stdout": "".join(captured_stdout),
-                    }
+            while proc.returncode is None:
+                result = await ctx.elicit(message=loop_message, response_type=None)
+                if result.action != "accept":
+                    raise ToolError(
+                        f"The user has cancelled the login request to {account.name} ({account.account_id})"
+                    )
+                await asyncio.sleep(0)
+
+            if proc.returncode != 0:
+                raise ToolError(
+                    json.dumps(
+                        {
+                            "exit_status": str(proc.returncode),
+                            "stderr": (await proc.stderr.read()).decode(),
+                            "stdout": "".join(captured_stdout),
+                        }
+                    )
                 )
-            )
