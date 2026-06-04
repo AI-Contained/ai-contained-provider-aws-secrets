@@ -40,21 +40,21 @@ class Account:
         return profile
 
 
-def _parse_login(data: dict[str, Any], fallback: AccountLogin | None) -> AccountLogin:
-    login_data = data.get("login", None)
-    if login_data is not None:
-        return AccountLogin(
-            type=login_data["type"],
-            command=login_data.get("command", None),
-            check_command=login_data.get("check_command", None),
-        )
-    if fallback is not None:
-        return fallback
-    raise KeyError("Account has no login and no root login is defined")
-
-
 class Accounts:
     """Collection of configured AWS accounts loaded from JSON5 config."""
+
+    @staticmethod
+    def _parse_login(data: dict[str, Any], fallback: AccountLogin | None) -> AccountLogin:
+        login_data = data.get("login", None)
+        if login_data is not None:
+            return AccountLogin(
+                type=login_data["type"],
+                command=login_data.get("command", None),
+                check_command=login_data.get("check_command", None),
+            )
+        if fallback is not None:
+            return fallback
+        raise KeyError("Account has no login and no root login is defined")
 
     def __init__(self, config: str) -> None:
         """Parse accounts from JSON5 config string."""
@@ -75,7 +75,7 @@ class Accounts:
                 trust_groups=acct.get("trust_groups", []),
                 read_profile=acct.get("read_profile", None),
                 write_profile=acct.get("write_profile", None),
-                login=_parse_login(acct, root_login),
+                login=Accounts._parse_login(acct, root_login),
             )
             for account_id, acct in data["accounts"].items()
         }
