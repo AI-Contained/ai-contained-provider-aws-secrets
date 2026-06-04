@@ -7,13 +7,10 @@ from assertpy import assert_that
 from fastmcp import Context, FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
-
-from mcp.types import TextContent
+from fastmcp.exceptions import ToolError
 
 from ai_contained.core.mcp.testing import Elicitor, WrapCallToolResult
 from ai_contained.provider.aws_secrets.accounts import Account, AccountLogin
-from fastmcp.exceptions import ToolError
-
 from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManager
 from ai_contained.provider.aws_secrets.types import LoginType, Role
 
@@ -73,13 +70,11 @@ def describe_CredentialsManager():
         async def raises_when_response_is_missing_account_key() -> None:
             account = make_account(
                 read_profile="mock-profile",
-                check_command="/bin/sh -c 'echo {\"UserId\": \"foo\"}; exit 0'",
+                check_command='/bin/sh -c \'echo {"UserId": "foo"}; exit 0\'',
             )
             with pytest.raises(ToolError) as exc_info:
                 await CredentialsManager().validate(Role.READ_ONLY, account)
             assert_that(str(exc_info.value)).contains("invalid response")
-
-
 
     def describe_fetch_credentials():
         mock_export = str(Path(__file__).parent / "bin" / "mock_aws_export.sh")
@@ -88,7 +83,7 @@ def describe_CredentialsManager():
             expected_env = {
                 "AWS_ACCESS_KEY_ID": "AKID123",
                 "AWS_SECRET_ACCESS_KEY": "SECRET123",
-                "AWS_SESSION_TOKEN": "TOKEN123"
+                "AWS_SESSION_TOKEN": "TOKEN123",
             }
             expected_expiration = "2026-06-01T11:12:44+00:00"
             monkeypatch.setenv("MOCK_EXPORT_ACCESS_KEY_ID", expected_env["AWS_ACCESS_KEY_ID"])
@@ -155,7 +150,9 @@ def describe_CredentialsManager():
                 )
 
             @pytest.fixture
-            async def client(elicitor: Elicitor, mock_account: Account) -> AsyncGenerator[Client[FastMCPTransport], None]:
+            async def client(
+                elicitor: Elicitor, mock_account: Account
+            ) -> AsyncGenerator[Client[FastMCPTransport], None]:
                 server = FastMCP("test")
                 credentials_manager = CredentialsManager()
 
@@ -194,7 +191,7 @@ def describe_CredentialsManager():
                 account = make_account(
                     read_profile="mock-profile",
                     login_type=LoginType.SSO,
-                    command="/bin/sh -c 'echo -n \"{stdout}\"; echo -n \"{stderr}\" >&2; exit {exit_code}'".format(
+                    command='/bin/sh -c \'echo -n "{stdout}"; echo -n "{stderr}" >&2; exit {exit_code}\''.format(
                         **expected, exit_code=int(expected["exit_status"])
                     ),
                 )

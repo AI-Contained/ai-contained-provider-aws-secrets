@@ -1,7 +1,10 @@
+"""MCP resource that exposes configured AWS accounts and their authorization state."""
+
 from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+from typing import Any
 
 from fastmcp.resources import resource
 
@@ -12,6 +15,8 @@ from ai_contained.provider.aws_secrets.types import AccessStatus, AwsAccountId
 
 @dataclass
 class AwsAccountResourceEntry:
+    """Serializable view of a single AWS account for the accounts resource."""
+
     name: str
     trust_groups: list[str]
     read_only: AccessStatus
@@ -19,7 +24,10 @@ class AwsAccountResourceEntry:
 
 
 class AwsAccountsResource:
+    """Builds and serves the aws-secrets/accounts MCP resource."""
+
     def __init__(self, accounts: Accounts, auth_read: AwsAuthTool, auth_write: AwsAuthTool) -> None:
+        """Initialise with account list and the two auth tools."""
         self._accounts = accounts
         self._auth_read = auth_read
         self._auth_write = auth_write
@@ -32,6 +40,7 @@ class AwsAccountsResource:
         return AccessStatus.REQUIRES_AUTH
 
     def convert(self) -> dict[AwsAccountId, AwsAccountResourceEntry]:
+        """Return the full account map with live authorization state."""
         return {
             account.account_id: AwsAccountResourceEntry(
                 name=account.name,
@@ -43,6 +52,6 @@ class AwsAccountsResource:
         }
 
     @resource("ai-contained://aws-secrets/accounts", mime_type="application/json")
-    def get(self) -> dict:
+    def get(self) -> dict[str, Any]:
         """List all configured AWS accounts with their current authorization state."""
         return {account_id: dataclasses.asdict(entry) for account_id, entry in self.convert().items()}

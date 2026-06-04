@@ -1,9 +1,9 @@
 import json
-from collections.abc import Generator
 from dataclasses import dataclass
 
 import pytest
 from assertpy import assert_that
+from conftest import MockCredentialsManager, return_responses
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
@@ -14,8 +14,6 @@ from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
 from ai_contained.provider.aws_secrets.credentials_manager import Credential
 from ai_contained.provider.aws_secrets.types import Role
-
-from conftest import MockCredentialsManager, return_responses
 
 
 def describe_AwsAuthTool():
@@ -130,7 +128,9 @@ def describe_AwsAuthTool():
             mock = Mock(credentials_manager=MockCredentialsManager(), elicitor=Elicitor())
             accounts = Accounts(f"""{{
                 login: {{ type: "sso" }},
-                accounts: {{ "{expected.account_id}": {{ name: "{expected.name}", read_profile: "test-read", write_profile: "test-write" }} }},
+                accounts: {{ "{expected.account_id}": {{
+                    name: "{expected.name}", read_profile: "test-read", write_profile: "test-write"
+                }} }},
             }}""")
             auth_tool = AwsAuthTool(Role.READ_ONLY, accounts, mock.credentials_manager)
             mcp = FastMCP("test")
@@ -177,7 +177,9 @@ def describe_AwsAuthTool():
             result = await client.call_tool("aws_auth_read", {"account_id": expected.account_id}, raise_on_error=False)
 
             assert_that(result.is_error).is_true()
-            assert_that(result.content[0].text).is_equal_to(f"Login succeeded but credentials are still invalid for {expected.account_id}")
+            assert_that(result.content[0].text).is_equal_to(
+                f"Login succeeded but credentials are still invalid for {expected.account_id}"
+            )
             assert_that(auth_tool.is_authorized(expected.account_id)).is_false()
 
         async def it_raises_when_user_declines_access(auth_setup) -> None:

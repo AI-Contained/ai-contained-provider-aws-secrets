@@ -1,3 +1,5 @@
+"""Credentials validation, login, and fetch logic for AWS accounts."""
+
 import asyncio
 import json
 import os
@@ -13,30 +15,33 @@ from ai_contained.provider.aws_secrets.types import LoginType, Role
 
 @dataclass
 class Credential:
+    """Short-lived AWS credential environment variables and their expiry."""
+
     env: dict[str, str]
     expiration: str | None
 
 
 class CredentialsManagerBase(Protocol):
+    """Protocol for pluggable credential backends (real AWS or test doubles)."""
+
     async def validate(self, role: Role, account: Account) -> bool:
-        # Returns True if credentials are valid and resolve to account.account_id.
-        # Returns False if credentials are absent or expired.
-        # Raises ToolError if credentials are valid but resolve to the wrong account.
+        """Return True if credentials are valid; False if absent/expired; raise on wrong account."""
         ...
 
     async def login(self, ctx: Context, role: Role, account: Account) -> None:
-        # Runs the login flow for the given login type.
-        # Raises ToolError if login is unsupported, user cancels, or the command fails.
+        """Run the login flow; raise ToolError if unsupported, cancelled, or failed."""
         ...
 
     async def fetch_credentials(self, role: Role, account: Account) -> Credential:
-        # Fetches current credentials for the account.
-        # Raises ToolError if credentials are expired or unavailable.
+        """Return current credentials; raise ToolError if unavailable."""
         ...
 
 
 class CredentialsManager(CredentialsManagerBase):
+    """Real AWS credentials manager that shells out to the AWS CLI."""
+
     async def validate(self, role: Role, account: Account) -> bool:
+        """Check credentials via sts get-caller-identity (or check_command)."""
         command = account.login.check_command or "aws sts get-caller-identity --output json"
         proc = await asyncio.create_subprocess_shell(
             command,
@@ -53,12 +58,11 @@ class CredentialsManager(CredentialsManagerBase):
         except (json.JSONDecodeError, KeyError):
             raise ToolError(f"invalid response from check_command: {stdout.decode()!r}")
         if resolved != account.account_id:
-            raise ToolError(
-                f"credentials resolve to '{resolved}', expected '{account.account_id}'"
-            )
+            raise ToolError(f"credentials resolve to '{resolved}', expected '{account.account_id}'")
         return True
 
     async def fetch_credentials(self, role: Role, account: Account) -> Credential:
+        """Export current credentials as env vars via the AWS CLI."""
         command = account.login.fetch_command or "aws configure export-credentials --format env"
         proc = await asyncio.create_subprocess_shell(
             command,
@@ -77,6 +81,7 @@ class CredentialsManager(CredentialsManagerBase):
         return Credential(env=env, expiration=expiration)
 
     async def login(self, ctx: Context, role: Role, account: Account) -> None:
+        """Dispatch to the appropriate login flow for the account's login type."""
         match account.login.type:
             case LoginType.PREAUTH:
                 raise ToolError("credentials invalid — fix externally and retry")
@@ -103,6 +108,8 @@ class CredentialsManager(CredentialsManagerBase):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        assert proc.stdout is not None
+        assert proc.stderr is not None
 
         # Two exit conditions: https_count == 2 (got both URLs, process still running)
         # or eof (process exited early — drain whatever stdout was buffered).
@@ -119,30 +126,34 @@ class CredentialsManager(CredentialsManagerBase):
                     https_count += 1
 
         if eof and https_count != 2:
-            raise ToolError(json.dumps({
-                "exit_status": str(proc.returncode),
-                "stderr": (await proc.stderr.read()).decode(),
-                "stdout": "".join(captured_stdout),
-            }))
+            raise ToolError(
+                json.dumps(
+                    {
+                        "exit_status": str(proc.returncode),
+                        "stderr": (await proc.stderr.read()).decode(),
+                        "stdout": "".join(captured_stdout),
+                    }
+                )
+            )
 
         result = await ctx.elicit(message="".join(captured_stdout), response_type=None)
         if result.action != "accept":
             proc.kill()
-            raise ToolError(
-                f"The user has cancelled the login request to {account.name} ({account.account_id})"
-            )
+            raise ToolError(f"The user has cancelled the login request to {account.name} ({account.account_id})")
 
         while proc.returncode is None:
             result = await ctx.elicit(message=loop_message, response_type=None)
             if result.action != "accept":
                 proc.kill()
-                raise ToolError(
-                    f"The user has cancelled the login request to {account.name} ({account.account_id})"
-                )
+                raise ToolError(f"The user has cancelled the login request to {account.name} ({account.account_id})")
 
         if proc.returncode != 0:
-            raise ToolError(json.dumps({
-                "exit_status": str(proc.returncode),
-                "stderr": (await proc.stderr.read()).decode(),
-                "stdout": "".join(captured_stdout),
-            }))
+            raise ToolError(
+                json.dumps(
+                    {
+                        "exit_status": str(proc.returncode),
+                        "stderr": (await proc.stderr.read()).decode(),
+                        "stdout": "".join(captured_stdout),
+                    }
+                )
+            )

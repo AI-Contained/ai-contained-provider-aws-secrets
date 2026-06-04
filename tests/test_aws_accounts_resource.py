@@ -35,8 +35,6 @@ def describe_AwsAccountsResource():
     def aws_auth_write() -> AwsAuthTool:
         return AwsAuthTool(Role.READ_WRITE, Accounts('{ login: { type: "sso" }, accounts: {} }'))
 
-
-
     def describe_convert():
         def it_includes_name_and_trust_groups(account_id, aws_auth_read, aws_auth_write) -> None:
             expected = AwsAccountResourceEntry(
@@ -84,7 +82,9 @@ def describe_AwsAccountsResource():
             ).convert()
             assert_that(result.get(account_id)).is_none()
 
-        def it_reports_read_access_as_unavailable_when_no_read_profile_is_configured(account_id, aws_auth_read, aws_auth_write) -> None:
+        def it_reports_read_access_as_unavailable_when_no_read_profile_is_configured(
+            account_id, aws_auth_read, aws_auth_write
+        ) -> None:
             expected = AwsAccountResourceEntry(
                 name="StagingAlpha",
                 trust_groups=[],
@@ -215,7 +215,9 @@ def describe_AwsAccountsResource():
 
     def describe_get():
         @pytest.fixture
-        async def client(account_id: str, aws_auth_read: AwsAuthTool, aws_auth_write: AwsAuthTool) -> AsyncGenerator[Client[FastMCPTransport], None]:
+        async def client(
+            account_id: str, aws_auth_read: AwsAuthTool, aws_auth_write: AwsAuthTool
+        ) -> AsyncGenerator[Client[FastMCPTransport], None]:
             server = FastMCP("test")
             await register(
                 server,
@@ -242,7 +244,9 @@ def describe_AwsAccountsResource():
             resources = await client.list_resources()
             assert_that([str(r.uri) for r in resources]).contains("ai-contained://aws-secrets/accounts")
 
-        async def it_reflects_authorization_state(client: Client[FastMCPTransport], account_id: str, aws_auth_read: AwsAuthTool) -> None:
+        async def it_reflects_authorization_state(
+            client: Client[FastMCPTransport], account_id: str, aws_auth_read: AwsAuthTool
+        ) -> None:
             aws_auth_read.authorize(account_id)
             content = await client.read_resource("ai-contained://aws-secrets/accounts")
             data = json.loads(content[0].text)

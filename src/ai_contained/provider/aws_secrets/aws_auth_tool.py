@@ -1,4 +1,9 @@
-from fastmcp import Context, tools as mcp
+"""MCP tool implementation for AWS account authentication."""
+
+from typing import Any
+
+from fastmcp import Context
+from fastmcp import tools as mcp
 from fastmcp.exceptions import ToolError
 
 from ai_contained.provider.aws_secrets.accounts import Accounts
@@ -7,26 +12,39 @@ from ai_contained.provider.aws_secrets.types import AwsAccountId, Role
 
 
 class AwsAuthTool:
-    def __init__(self, role: Role, accounts: Accounts, authenticator: CredentialsManagerBase = CredentialsManager()) -> None:
+    """Manages per-account authorization state and drives the authenticate MCP tool."""
+
+    def __init__(
+        self,
+        role: Role,
+        accounts: Accounts,
+        authenticator: CredentialsManagerBase = CredentialsManager(),
+    ) -> None:
+        """Initialise for the given role with an optional custom credentials manager."""
         self.role = role
         self.accounts = accounts
         self.authenticator = authenticator
         self._authorized: set[AwsAccountId] = set()
 
     def is_authorized(self, account_id: AwsAccountId) -> bool:
+        """Return True if the account has been authorized this session."""
         return account_id in self._authorized
 
     def authorize(self, account_id: AwsAccountId) -> None:
+        """Mark an account as authorized."""
         self._authorized.add(account_id)
 
     def revoke(self, account_id: AwsAccountId) -> None:
+        """Remove authorization for an account."""
         self._authorized.discard(account_id)
 
     def revoke_all(self) -> None:
+        """Remove authorization for all accounts."""
         self._authorized.clear()
 
     @mcp.tool()
-    async def authenticate(self, ctx: Context, account_id: AwsAccountId) -> dict:
+    async def authenticate(self, ctx: Context, account_id: AwsAccountId) -> dict[str, Any]:
+        """Authenticate to an AWS account and return short-lived credentials."""
         account = self.accounts.get_account(account_id)
         if account is None:
             raise ToolError(f"Unknown account: {account_id}")

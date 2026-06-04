@@ -5,21 +5,19 @@ from dataclasses import dataclass
 import httpx
 import pytest
 from assertpy import assert_that
+from conftest import MockCredentialsManager, return_responses
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-
-from ai_contained.trust import server as trust_server
-from ai_contained.trust.client import TrustClient
-from ai_contained.trust.client.trust_connection import TrustConnection
-from ai_contained.trust.server.trust_store import get_trust_store
 
 from ai_contained.provider.aws_secrets import register
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
 from ai_contained.provider.aws_secrets.credentials_manager import Credential
 from ai_contained.provider.aws_secrets.types import Role
-
-from conftest import MockCredentialsManager, return_responses
+from ai_contained.trust import server as trust_server
+from ai_contained.trust.client import TrustClient
+from ai_contained.trust.client.trust_connection import TrustConnection
+from ai_contained.trust.server.trust_store import get_trust_store
 
 
 def describe_AwsSecretRoute():
@@ -43,7 +41,9 @@ def describe_AwsSecretRoute():
         )
         accounts = Accounts(f"""{{
             login: {{ type: "sso" }},
-            accounts: {{ "{expected.account_id}": {{ name: "{expected.name}", read_profile: "test-read", write_profile: "test-write" }} }},
+            accounts: {{ "{expected.account_id}": {{
+                name: "{expected.name}", read_profile: "test-read", write_profile: "test-write"
+            }} }},
         }}""")
         mock_credentials_manager = MockCredentialsManager()
         auth_read = AwsAuthTool(Role.READ_ONLY, accounts, mock_credentials_manager)
@@ -63,7 +63,13 @@ def describe_AwsSecretRoute():
         async with httpx.AsyncClient(transport=transport, base_url="http://ignored") as http:
             conn = TrustConnection(http)
             await conn.register()
-            yield expected, TrustClient(_connection=conn, _path="/aws/secret"), auth_read, auth_write, mock_credentials_manager
+            yield (
+                expected,
+                TrustClient(_connection=conn, _path="/aws/secret"),
+                auth_read,
+                auth_write,
+                mock_credentials_manager,
+            )
 
     async def it_dispenses_credentials_to_authorized_callers(secret_setup) -> None:
         expected, client, auth_read, _, mock_credentials_manager = secret_setup
@@ -94,10 +100,12 @@ def describe_AwsSecretRoute():
             await client.post({"account_id": expected.account_id, "role": "ReadOnly"})
 
         assert_that(exc_info.value.response.status_code).is_equal_to(403)
-        assert_that(exc_info.value.response.json()).is_equal_to({
-            "code": "NOT_AUTHORIZED",
-            "detail": f"Call aws_auth_read('{expected.account_id}') to authenticate, then retry",
-        })
+        assert_that(exc_info.value.response.json()).is_equal_to(
+            {
+                "code": "NOT_AUTHORIZED",
+                "detail": f"Call aws_auth_read('{expected.account_id}') to authenticate, then retry",
+            }
+        )
 
     async def it_rejects_unknown_accounts(secret_setup) -> None:
         _, client, _, _, _ = secret_setup
@@ -106,10 +114,12 @@ def describe_AwsSecretRoute():
             await client.post({"account_id": "000000000000", "role": "ReadOnly"})
 
         assert_that(exc_info.value.response.status_code).is_equal_to(404)
-        assert_that(exc_info.value.response.json()).is_equal_to({
-            "code": "UNKNOWN_ACCOUNT",
-            "detail": "Account '000000000000' is not configured",
-        })
+        assert_that(exc_info.value.response.json()).is_equal_to(
+            {
+                "code": "UNKNOWN_ACCOUNT",
+                "detail": "Account '000000000000' is not configured",
+            }
+        )
 
     async def it_signals_session_expired_when_credentials_are_unavailable(secret_setup) -> None:
         expected, client, auth_read, _, mock_credentials_manager = secret_setup
@@ -120,16 +130,25 @@ def describe_AwsSecretRoute():
             await client.post({"account_id": expected.account_id, "role": "ReadOnly"})
 
         assert_that(exc_info.value.response.status_code).is_equal_to(401)
-        assert_that(exc_info.value.response.json()).is_equal_to({
-            "code": "SESSION_EXPIRED",
-            "detail": f"Call aws_auth_read('{expected.account_id}') to re-authenticate, then retry",
-        })
+        assert_that(exc_info.value.response.json()).is_equal_to(
+            {
+                "code": "SESSION_EXPIRED",
+                "detail": f"Call aws_auth_read('{expected.account_id}') to re-authenticate, then retry",
+            }
+        )
 
-    @pytest.mark.parametrize("payload,detail", [
-        pytest.param({"role": "ReadOnly"}, "account_id is required", id="missing account_id"),
-        pytest.param({"account_id": ACCOUNT_ID}, "role must be 'ReadOnly' or 'ReadWrite'", id="missing role"),
-        pytest.param({"account_id": ACCOUNT_ID, "role": "SuperAdmin"}, "role must be 'ReadOnly' or 'ReadWrite'", id="invalid role"),
-    ])
+    @pytest.mark.parametrize(
+        "payload,detail",
+        [
+            pytest.param({"role": "ReadOnly"}, "account_id is required", id="missing account_id"),
+            pytest.param({"account_id": ACCOUNT_ID}, "role must be 'ReadOnly' or 'ReadWrite'", id="missing role"),
+            pytest.param(
+                {"account_id": ACCOUNT_ID, "role": "SuperAdmin"},
+                "role must be 'ReadOnly' or 'ReadWrite'",
+                id="invalid role",
+            ),
+        ],
+    )
     async def it_rejects_invalid_requests(secret_setup, payload, detail) -> None:
         _, client, _, _, _ = secret_setup
 

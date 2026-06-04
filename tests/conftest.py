@@ -11,9 +11,11 @@ class MockCredentialsManager:
 
 def return_responses(*values):
     it = iter(values)
+
     async def _fn(*args, **kwargs):
         val = next(it)
         if isinstance(val, Exception):
             raise val
         return val
+
     return _fn

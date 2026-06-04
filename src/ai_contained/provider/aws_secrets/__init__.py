@@ -4,15 +4,13 @@ import os
 
 from fastmcp import FastMCP
 
-from ai_contained.trust import server as trust_server
-
 from ai_contained.provider.aws_secrets.accounts import Accounts
-from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManager
 from ai_contained.provider.aws_secrets.aws_accounts_resource import AwsAccountsResource
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
 from ai_contained.provider.aws_secrets.aws_secret_route import AwsSecretRoute
+from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManager
 from ai_contained.provider.aws_secrets.types import Role
-
+from ai_contained.trust import server as trust_server
 
 _AUTH_READ_DESCRIPTION = """\
 Authenticate to an AWS account with read-only access.
@@ -71,8 +69,8 @@ Notes:
 async def register(
     mcp: FastMCP,
     *,
-    _accounts: Accounts | None = None,      # test injection only — overrides AWS_ACCOUNTS_CONFIG_PATH
-    _auth_read: AwsAuthTool | None = None,   # test injection only — overrides default AwsAuthTool
+    _accounts: Accounts | None = None,  # test injection only — overrides AWS_ACCOUNTS_CONFIG_PATH
+    _auth_read: AwsAuthTool | None = None,  # test injection only — overrides default AwsAuthTool
     _auth_write: AwsAuthTool | None = None,  # test injection only — overrides default AwsAuthTool
 ) -> None:
     """Register all AWS secrets provider tools with the MCP server."""
