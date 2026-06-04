@@ -1,4 +1,8 @@
-from fastmcp.client.elicitation import ElicitResult
+from typing import Any
+
+from fastmcp.client.elicitation import ElicitRequestParams, ElicitResult
+from mcp.client.session import ClientSession
+from mcp.shared.context import RequestContext
 
 from ai_contained.core.mcp.testing import Elicitor
 
@@ -14,8 +18,8 @@ async def with_accept_fallback(
     self: Elicitor,
     message: str,
     response_type: type | None,
-    params: object,
-    context: object,
+    params: ElicitRequestParams,
+    context: RequestContext[ClientSession, Any],
 ) -> ElicitResult:
     try:
         return await _upstream_elicitor_call(self, message, response_type, params, context)
