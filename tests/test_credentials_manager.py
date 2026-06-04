@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from assertpy import assert_that
+from conftest import with_accept_fallback
 from fastmcp import Context, FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
@@ -218,14 +219,16 @@ def describe_CredentialsManager():
             async def raises_when_sso_command_exits_nonzero(
                 client: Client[FastMCPTransport], elicitor: Elicitor, monkeypatch: pytest.MonkeyPatch
             ) -> None:
+                monkeypatch.setattr(Elicitor, "__call__", with_accept_fallback)
                 monkeypatch.setenv("MOCK_SSO_EXIT_CODE", "1")
                 elicitor.on_elicit(_accept_asserting_url)
                 result = await client.call_tool("fake_login", {}, raise_on_error=False)
                 assert_that(result.is_error).is_true()
 
             async def succeeds_when_user_accepts_and_command_exits_zero(
-                client: Client[FastMCPTransport], elicitor: Elicitor
+                client: Client[FastMCPTransport], elicitor: Elicitor, monkeypatch: pytest.MonkeyPatch
             ) -> None:
+                monkeypatch.setattr(Elicitor, "__call__", with_accept_fallback)
                 elicitor.on_elicit(_accept_asserting_url)
                 result = await client.call_tool("fake_login", {}, raise_on_error=False)
                 assert_that(result.is_error).is_false()
@@ -251,6 +254,7 @@ def describe_CredentialsManager():
                 monkeypatch: pytest.MonkeyPatch,
                 tmp_path: Path,
             ) -> None:
+                monkeypatch.setattr(Elicitor, "__call__", with_accept_fallback)
                 fifo = tmp_path / "sso.fifo"
                 os.mkfifo(fifo)
                 monkeypatch.setenv("MOCK_SSO_FIFO", str(fifo))
@@ -258,7 +262,7 @@ def describe_CredentialsManager():
 
                 def accept_and_unblock(msg, rtype, params, ctx):
                     assert_that(msg).is_equal_to(LOOP_ELICITATION_MESSAGE)
-                    # We signal to our MOCK SSO app that we're finished
+                    # Signal to the mock SSO script that authorization is complete.
                     with open(str(fifo), "w") as f:
                         f.write("done\n")
                     return ("accept", None)

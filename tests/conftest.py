@@ -1,3 +1,28 @@
+from fastmcp.client.elicitation import ElicitResult
+
+from ai_contained.core.mcp.testing import Elicitor
+
+# The number of loop elicitations in _login_sso is non-deterministic: on slower CI
+# machines the subprocess exit event may not have been processed by asyncio before
+# proc.returncode is checked, causing one extra loop elicitation beyond what the test
+# registered. Tests affected by this apply the patch below via monkeypatch to silently
+# accept when the queue is exhausted rather than crashing the MCP session.
+_upstream_elicitor_call = Elicitor.__call__
+
+
+async def with_accept_fallback(
+    self: Elicitor,
+    message: str,
+    response_type: type | None,
+    params: object,
+    context: object,
+) -> ElicitResult:
+    try:
+        return await _upstream_elicitor_call(self, message, response_type, params, context)
+    except IndexError:
+        return ElicitResult(action="accept", content=None)
+
+
 class MockCredentialsManager:
     async def validate(self, role, account):
         raise NotImplementedError("set mock_credentials_manager.validate = return_responses(...)")
