@@ -1,0 +1,66 @@
+"""MCP tool implementation for AWS account authentication."""
+
+from typing import Any
+
+from fastmcp import Context
+from fastmcp import tools as mcp
+from fastmcp.exceptions import ToolError
+
+from ai_contained.provider.aws_secrets.accounts import Accounts
+from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManager, CredentialsManagerBase
+from ai_contained.provider.aws_secrets.types import AwsAccountId, Role
+
+
+class AwsAuthTool:
+    """Manages per-account authorization state and drives the authenticate MCP tool."""
+
+    def __init__(
+        self,
+        role: Role,
+        accounts: Accounts,
+        authenticator: CredentialsManagerBase = CredentialsManager(),
+    ) -> None:
+        """Initialise for the given role with an optional custom credentials manager."""
+        self.role = role
+        self.accounts = accounts
+        self.authenticator = authenticator
+        self._authorized: set[AwsAccountId] = set()
+
+    def is_authorized(self, account_id: AwsAccountId) -> bool:
+        """Return True if the account has been authorized this session."""
+        return account_id in self._authorized
+
+    def authorize(self, account_id: AwsAccountId) -> None:
+        """Mark an account as authorized."""
+        self._authorized.add(account_id)
+
+    def revoke(self, account_id: AwsAccountId) -> None:
+        """Remove authorization for an account."""
+        self._authorized.discard(account_id)
+
+    def revoke_all(self) -> None:
+        """Remove authorization for all accounts."""
+        self._authorized.clear()
+
+    @mcp.tool()
+    async def authenticate(self, ctx: Context, account_id: AwsAccountId) -> dict[str, Any]:
+        """Authenticate to an AWS account and return short-lived credentials."""
+        account = self.accounts.get_account(account_id)
+        if account is None:
+            raise ToolError(f"Unknown account: {account_id}")
+        if not self.is_authorized(account_id):
+            role_label = "ReadOnly" if self.role == Role.READ_ONLY else "ReadWrite"
+            tool_name = "aws_auth_read" if self.role == Role.READ_ONLY else "aws_auth_write"
+            result = await ctx.elicit(
+                message=f"I'd like {role_label} AWS Access to {account.name} ({account_id}). (using tool: {tool_name})",
+                response_type=None,
+            )
+            if result.action != "accept":
+                raise ToolError(f"Access to {tool_name}({account.name}) was declined")
+        if not await self.authenticator.validate(self.role, account):
+            await self.authenticator.login(ctx, self.role, account)
+            if not await self.authenticator.validate(self.role, account):
+                raise ToolError(f"Login succeeded but credentials are still invalid for {account_id}")
+        self.authorize(account_id)
+        credential = await self.authenticator.fetch_credentials(self.role, account)
+        return {account_id: {"name": account.name, "expires_at": credential.expiration}}
