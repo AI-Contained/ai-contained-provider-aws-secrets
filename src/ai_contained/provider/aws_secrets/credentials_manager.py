@@ -44,9 +44,7 @@ class CredentialsManager(CredentialsManagerBase):
 
     @staticmethod
     @asynccontextmanager
-    async def managed_shell(
-        cmd: str, **kwargs: Any
-    ) -> AsyncGenerator[asyncio.subprocess.Process, None]:
+    async def managed_shell(cmd: str, **kwargs: Any) -> AsyncGenerator[asyncio.subprocess.Process, None]:
         """Run a shell command and guarantee cleanup on exit.
 
         Yields the Process. On exit (normal or exception), sends SIGTERM and
