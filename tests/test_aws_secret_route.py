@@ -31,10 +31,12 @@ def describe_AwsSecretRoute():
 
     @pytest.fixture
     async def secret_setup() -> AsyncGenerator:
+        expected_name = "Test"
         expected = Expected(
             account_id=ACCOUNT_ID,
-            name="Test",
+            name=expected_name,
             credential=Credential(
+                name=expected_name,
                 env={"AWS_ACCESS_KEY_ID": "AKID", "AWS_SECRET_ACCESS_KEY": "SECRET", "AWS_SESSION_TOKEN": "TOKEN"},
                 expiration="2026-06-01T11:12:44+00:00",
             ),
@@ -83,6 +85,7 @@ def describe_AwsSecretRoute():
     async def it_dispenses_credentials_without_expiration(secret_setup) -> None:
         expected, client, auth_read, _, mock_credentials_manager = secret_setup
         credential = Credential(
+            name=expected.name,
             env={"AWS_ACCESS_KEY_ID": "AKID", "AWS_SECRET_ACCESS_KEY": "SECRET", "AWS_SESSION_TOKEN": "TOKEN"},
             expiration=None,
         )
@@ -161,6 +164,7 @@ def describe_AwsSecretRoute():
     async def it_dispenses_write_credentials_for_read_write_role(secret_setup) -> None:
         expected, client, _, auth_write, mock_credentials_manager = secret_setup
         credential = Credential(
+            name=expected.name,
             env={"AWS_ACCESS_KEY_ID": "AKID", "AWS_SECRET_ACCESS_KEY": "SECRET", "AWS_SESSION_TOKEN": "TOKEN"},
             expiration=None,
         )

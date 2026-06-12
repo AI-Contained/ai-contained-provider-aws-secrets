@@ -19,6 +19,7 @@ from ai_contained.provider.aws_secrets.types import LoginType, Role
 class Credential:
     """Short-lived AWS credential environment variables and their expiry."""
 
+    name: str
     env: dict[str, str]
     expiration: str | None
 
@@ -100,7 +101,7 @@ class CredentialsManager(CredentialsManagerBase):
             key, _, value = line.removeprefix("export ").partition("=")
             env[key] = value
         expiration = env.pop("AWS_CREDENTIAL_EXPIRATION", None)
-        return Credential(env=env, expiration=expiration)
+        return Credential(name=account.name, env=env, expiration=expiration)
 
     async def login(self, ctx: Context, role: Role, account: Account) -> None:
         """Dispatch to the appropriate login flow for the account's login type."""
