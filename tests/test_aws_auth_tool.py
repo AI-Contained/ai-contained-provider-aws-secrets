@@ -117,10 +117,12 @@ def describe_AwsAuthTool():
 
         @pytest.fixture
         async def auth_setup():
+            expected_name = "Test"
             expected = Expected(
                 account_id="123456789012",
-                name="Test",
+                name=expected_name,
                 credential=Credential(
+                    name=expected_name,
                     env={"AWS_ACCESS_KEY_ID": "AKID", "AWS_SECRET_ACCESS_KEY": "SECRET", "AWS_SESSION_TOKEN": "TOKEN"},
                     expiration="2026-06-01T11:12:44+00:00",
                 ),
