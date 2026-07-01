@@ -37,6 +37,34 @@ def make_account(
 
 
 def describe_CredentialsManager():
+    def describe_aws_env():
+        async def uses_AWS_HOME_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+            expected = "/secrets/aws-secrets"
+            monkeypatch.setenv("AWS_HOME", expected)
+            monkeypatch.setenv("AWS_ACCOUNTS_CONFIG_PATH", "/elsewhere/accounts.json5")
+            result = CredentialsManager()._aws_env()
+            assert_that(result["HOME"]).is_equal_to(expected)
+
+        async def falls_back_to_dirname_of_AWS_ACCOUNTS_CONFIG_PATH(monkeypatch: pytest.MonkeyPatch) -> None:
+            expected = "/secrets/aws-secrets"
+            monkeypatch.delenv("AWS_HOME", raising=False)
+            monkeypatch.setenv("AWS_ACCOUNTS_CONFIG_PATH", f"{expected}/accounts.json5")
+            result = CredentialsManager()._aws_env()
+            assert_that(result["HOME"]).is_equal_to(expected)
+
+        async def leaves_HOME_alone_when_neither_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+            expected = "/root"
+            monkeypatch.delenv("AWS_HOME", raising=False)
+            monkeypatch.delenv("AWS_ACCOUNTS_CONFIG_PATH", raising=False)
+            monkeypatch.setenv("HOME", expected)
+            result = CredentialsManager()._aws_env()
+            assert_that(result["HOME"]).is_equal_to(expected)
+
+        async def applies_kwargs_as_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+            expected = "test-read"
+            result = CredentialsManager()._aws_env(AWS_PROFILE=expected)
+            assert_that(result["AWS_PROFILE"]).is_equal_to(expected)
+
     def describe_validate():
         mock_sts = str(Path(__file__).parent / "bin" / "mock_aws_sts.sh")
 

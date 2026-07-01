@@ -43,6 +43,22 @@ class CredentialsManagerBase(Protocol):
 class CredentialsManager(CredentialsManagerBase):
     """Real AWS credentials manager that shells out to the AWS CLI."""
 
+    def _aws_env(self, **overrides: str) -> dict[str, str]:
+        """Build the environment for AWS subprocesses.
+
+        AWS CLI has no env var to relocate ~/.aws/ wholesale (aws/aws-cli#9031),
+        so pin HOME to keep config, credentials, and SSO cache on the bind mount.
+        HOME is redirected to AWS_HOME if set, else to dirname(AWS_ACCOUNTS_CONFIG_PATH)
+        if set, else left as the container's HOME.
+        """
+        env = {**os.environ, **overrides}
+        aws_home = os.environ.get("AWS_HOME") or (
+            os.path.dirname(config_path) if (config_path := os.environ.get("AWS_ACCOUNTS_CONFIG_PATH")) else None
+        )
+        if aws_home:
+            env["HOME"] = aws_home
+        return env
+
     @staticmethod
     @asynccontextmanager
     async def managed_shell(cmd: str, **kwargs: Any) -> AsyncGenerator[asyncio.subprocess.Process, None]:
@@ -68,7 +84,7 @@ class CredentialsManager(CredentialsManagerBase):
         command = account.login.check_command or "aws sts get-caller-identity --output json"
         async with self.managed_shell(
             command,
-            env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
+            env=self._aws_env(AWS_PROFILE=account.profile_for(role)),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         ) as proc:
@@ -89,7 +105,7 @@ class CredentialsManager(CredentialsManagerBase):
         command = account.login.fetch_command or "aws configure export-credentials --format env"
         async with self.managed_shell(
             command,
-            env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
+            env=self._aws_env(AWS_PROFILE=account.profile_for(role)),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         ) as proc:
@@ -127,7 +143,7 @@ class CredentialsManager(CredentialsManagerBase):
 
         async with self.managed_shell(
             command,
-            env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
+            env=self._aws_env(AWS_PROFILE=account.profile_for(role)),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         ) as proc:
