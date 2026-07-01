@@ -37,6 +37,34 @@ def make_account(
 
 
 def describe_CredentialsManager():
+    def describe_aws_env():
+        async def uses_AWS_HOME_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+            expected = "/secrets/aws-secrets"
+            monkeypatch.setenv("AWS_HOME", expected)
+            monkeypatch.setenv("AWS_ACCOUNTS_CONFIG_PATH", "/elsewhere/accounts.json5")
+            result = CredentialsManager()._aws_env()
+            assert_that(result["HOME"]).is_equal_to(expected)
+
+        async def falls_back_to_dirname_of_AWS_ACCOUNTS_CONFIG_PATH(monkeypatch: pytest.MonkeyPatch) -> None:
+            expected = "/secrets/aws-secrets"
+            monkeypatch.delenv("AWS_HOME", raising=False)
+            monkeypatch.setenv("AWS_ACCOUNTS_CONFIG_PATH", f"{expected}/accounts.json5")
+            result = CredentialsManager()._aws_env()
+            assert_that(result["HOME"]).is_equal_to(expected)
+
+        async def leaves_HOME_alone_when_neither_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+            expected = "/root"
+            monkeypatch.delenv("AWS_HOME", raising=False)
+            monkeypatch.delenv("AWS_ACCOUNTS_CONFIG_PATH", raising=False)
+            monkeypatch.setenv("HOME", expected)
+            result = CredentialsManager()._aws_env()
+            assert_that(result["HOME"]).is_equal_to(expected)
+
+        async def applies_kwargs_as_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+            expected = "test-read"
+            result = CredentialsManager()._aws_env(AWS_PROFILE=expected)
+            assert_that(result["AWS_PROFILE"]).is_equal_to(expected)
+
     def describe_validate():
         mock_sts = str(Path(__file__).parent / "bin" / "mock_aws_sts.sh")
 
@@ -102,11 +130,22 @@ def describe_CredentialsManager():
             result = await CredentialsManager().fetch_credentials(Role.READ_ONLY, account)
             assert_that(result.expiration).is_none()
 
-        async def raises_when_command_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
+        @pytest.mark.parametrize(
+            "role, expected_tool",
+            [
+                pytest.param(Role.READ_ONLY, "aws_auth_read", id="read_only"),
+                pytest.param(Role.READ_WRITE, "aws_auth_write", id="read_write"),
+            ],
+        )
+        async def raises_with_recovery_hint_when_command_exits_nonzero(
+            role: Role, expected_tool: str, monkeypatch: pytest.MonkeyPatch
+        ) -> None:
             monkeypatch.setenv("MOCK_EXPORT_EXIT_CODE", "1")
-            account = make_account(read_profile="mock-profile", fetch_command=mock_export)
-            with pytest.raises(ToolError):
-                await CredentialsManager().fetch_credentials(Role.READ_ONLY, account)
+            account = make_account(read_profile="mock-profile", write_profile="mock-profile", fetch_command=mock_export)
+            expected = f"Credentials unavailable for {account.account_id}: call {expected_tool} to re-authenticate"
+            with pytest.raises(ToolError) as exc_info:
+                await CredentialsManager().fetch_credentials(role, account)
+            assert_that(str(exc_info.value)).is_equal_to(expected)
 
     def describe_login():
         @pytest.fixture
@@ -129,14 +168,20 @@ def describe_CredentialsManager():
                 "Click Allow to check again, or Decline to cancel."
             )
 
+            LOGIN_HINT = "After completing login in your browser, click Accept to continue."
+
             def _decline_asserting_url(msg, rtype, params, ctx):
-                assert_that(msg).ends_with("\n")
-                assert_that(msg.splitlines()[-1]).starts_with("https://")
+                lines = msg.splitlines()
+                assert_that(lines[-3]).starts_with("https://")
+                assert_that(lines[-2]).is_empty()
+                assert_that(lines[-1]).is_equal_to(LOGIN_HINT)
                 return ("decline", None)
 
             def _accept_asserting_url(msg, rtype, params, ctx):
-                assert_that(msg).ends_with("\n")
-                assert_that(msg.splitlines()[-1]).starts_with("https://")
+                lines = msg.splitlines()
+                assert_that(lines[-3]).starts_with("https://")
+                assert_that(lines[-2]).is_empty()
+                assert_that(lines[-1]).is_equal_to(LOGIN_HINT)
                 return ("accept", None)
 
             # Success cases only assert is_error=False — the return value is "ok" from

@@ -108,7 +108,7 @@ def describe_AwsAuthTool():
             credential: Credential
 
             def auth_prompt(self) -> str:
-                return f"I'd like ReadOnly AWS Access to {self.name} ({self.account_id}). (using tool: aws_auth_read)"
+                return f"I'd like ReadOnly AWS Access to {self.name}({self.account_id}). (using tool: aws_auth_read)"
 
         @dataclass
         class Mock:
@@ -116,7 +116,8 @@ def describe_AwsAuthTool():
             elicitor: Elicitor
 
         @pytest.fixture
-        async def auth_setup():
+        async def auth_setup(monkeypatch: pytest.MonkeyPatch):
+            monkeypatch.setenv("COLOR", "off")
             expected_name = "Test"
             expected = Expected(
                 account_id="123456789012",
@@ -200,7 +201,10 @@ def describe_AwsAuthTool():
             result = await client.call_tool("aws_auth_read", {"account_id": "000000000000"}, raise_on_error=False)
 
             assert_that(result.is_error).is_true()
-            assert_that(result.content[0].text).is_equal_to("Unknown account: 000000000000")
+            assert_that(result.content[0].text).is_equal_to(
+                "Unknown account: 000000000000. "
+                "Consult ai-contained://aws-secrets/accounts to discover available accounts and their IDs."
+            )
 
         async def it_propagates_login_errors_to_the_caller(auth_setup) -> None:
             expected, client, auth_tool, mock = auth_setup

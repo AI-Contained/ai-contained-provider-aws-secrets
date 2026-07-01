@@ -43,6 +43,22 @@ class CredentialsManagerBase(Protocol):
 class CredentialsManager(CredentialsManagerBase):
     """Real AWS credentials manager that shells out to the AWS CLI."""
 
+    def _aws_env(self, **overrides: str) -> dict[str, str]:
+        """Build the environment for AWS subprocesses.
+
+        AWS CLI has no env var to relocate ~/.aws/ wholesale (aws/aws-cli#9031),
+        so pin HOME to keep config, credentials, and SSO cache on the bind mount.
+        HOME is redirected to AWS_HOME if set, else to dirname(AWS_ACCOUNTS_CONFIG_PATH)
+        if set, else left as the container's HOME.
+        """
+        env = {**os.environ, **overrides}
+        aws_home = os.environ.get("AWS_HOME") or (
+            os.path.dirname(config_path) if (config_path := os.environ.get("AWS_ACCOUNTS_CONFIG_PATH")) else None
+        )
+        if aws_home:
+            env["HOME"] = aws_home
+        return env
+
     @staticmethod
     @asynccontextmanager
     async def managed_shell(cmd: str, **kwargs: Any) -> AsyncGenerator[asyncio.subprocess.Process, None]:
@@ -68,7 +84,7 @@ class CredentialsManager(CredentialsManagerBase):
         command = account.login.check_command or "aws sts get-caller-identity --output json"
         async with self.managed_shell(
             command,
-            env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
+            env=self._aws_env(AWS_PROFILE=account.profile_for(role)),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         ) as proc:
@@ -89,13 +105,14 @@ class CredentialsManager(CredentialsManagerBase):
         command = account.login.fetch_command or "aws configure export-credentials --format env"
         async with self.managed_shell(
             command,
-            env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
+            env=self._aws_env(AWS_PROFILE=account.profile_for(role)),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         ) as proc:
             stdout, _ = await proc.communicate()
         if proc.returncode != 0:
-            raise ToolError(f"credentials unavailable for {account.account_id}")
+            tool = "aws_auth_read" if role == Role.READ_ONLY else "aws_auth_write"
+            raise ToolError(f"Credentials unavailable for {account.account_id}: call {tool} to re-authenticate")
         env = {}
         for line in stdout.decode().splitlines():
             key, _, value = line.removeprefix("export ").partition("=")
@@ -127,7 +144,7 @@ class CredentialsManager(CredentialsManagerBase):
 
         async with self.managed_shell(
             command,
-            env={**os.environ, "AWS_PROFILE": account.profile_for(role)},
+            env=self._aws_env(AWS_PROFILE=account.profile_for(role)),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         ) as proc:
@@ -159,7 +176,8 @@ class CredentialsManager(CredentialsManagerBase):
                     )
                 )
 
-            result = await ctx.elicit(message="".join(captured_stdout), response_type=None)
+            login_hint = "\nAfter completing login in your browser, click Accept to continue."
+            result = await ctx.elicit(message="".join(captured_stdout) + login_hint, response_type=None)
             if result.action != "accept":
                 raise ToolError(f"The user has cancelled the login request to {account.name} ({account.account_id})")
 

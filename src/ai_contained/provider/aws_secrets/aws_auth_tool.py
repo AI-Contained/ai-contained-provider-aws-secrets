@@ -1,5 +1,7 @@
 """MCP tool implementation for AWS account authentication."""
 
+import hashlib
+import os
 from typing import Any
 
 from fastmcp import Context
@@ -9,6 +11,32 @@ from fastmcp.exceptions import ToolError
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManager, CredentialsManagerBase
 from ai_contained.provider.aws_secrets.types import AwsAccountId, Role
+
+
+class _Color:
+    """ANSI colorizer for elicitation messages. Disabled via COLOR != 'ascii'."""
+
+    @staticmethod
+    def _wrap(ansi: str, text: str) -> str:
+        if os.environ.get("COLOR", "ascii") != "ascii":
+            return text
+        return f"\033[{ansi}m{text}\033[0m"
+
+    @staticmethod
+    def role(name: str) -> str:
+        """Green for aws_auth_read, red for aws_auth_write."""
+        return _Color._wrap("32" if name == "aws_auth_read" else "31", name)
+
+    @staticmethod
+    def id(account: str) -> str:
+        """Dim gray — de-emphasizes the 12-digit account ID next to its human name."""
+        return _Color._wrap("38;5;245", account)
+
+    @staticmethod
+    def name(account_name: str) -> str:
+        """Deterministic per-name hue, hashed into the 6×6×6 color cube (codes 17–231)."""
+        code = (hashlib.blake2b(account_name.encode(), digest_size=1).digest()[0] % 215) + 17
+        return _Color._wrap(f"38;5;{code}", account_name)
 
 
 class AwsAuthTool:
@@ -47,12 +75,18 @@ class AwsAuthTool:
         """Authenticate to an AWS account and return short-lived credentials."""
         account = self.accounts.get_account(account_id)
         if account is None:
-            raise ToolError(f"Unknown account: {account_id}")
+            raise ToolError(
+                f"Unknown account: {account_id}. "
+                "Consult ai-contained://aws-secrets/accounts to discover available accounts and their IDs."
+            )
         if not self.is_authorized(account_id):
             role_label = "ReadOnly" if self.role == Role.READ_ONLY else "ReadWrite"
             tool_name = "aws_auth_read" if self.role == Role.READ_ONLY else "aws_auth_write"
             result = await ctx.elicit(
-                message=f"I'd like {role_label} AWS Access to {account.name} ({account_id}). (using tool: {tool_name})",
+                message=(
+                    f"I'd like {role_label} AWS Access to {_Color.name(account.name)}"
+                    f"({_Color.id(account_id)}). (using tool: {_Color.role(tool_name)})"
+                ),
                 response_type=None,
             )
             if result.action != "accept":
