@@ -75,7 +75,10 @@ class AwsAuthTool:
         """Authenticate to an AWS account and return short-lived credentials."""
         account = self.accounts.get_account(account_id)
         if account is None:
-            raise ToolError(f"Unknown account: {account_id}")
+            raise ToolError(
+                f"Unknown account: {account_id}. "
+                "Consult ai-contained://aws-secrets/accounts to discover available accounts and their IDs."
+            )
         if not self.is_authorized(account_id):
             role_label = "ReadOnly" if self.role == Role.READ_ONLY else "ReadWrite"
             tool_name = "aws_auth_read" if self.role == Role.READ_ONLY else "aws_auth_write"

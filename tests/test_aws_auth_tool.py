@@ -201,7 +201,10 @@ def describe_AwsAuthTool():
             result = await client.call_tool("aws_auth_read", {"account_id": "000000000000"}, raise_on_error=False)
 
             assert_that(result.is_error).is_true()
-            assert_that(result.content[0].text).is_equal_to("Unknown account: 000000000000")
+            assert_that(result.content[0].text).is_equal_to(
+                "Unknown account: 000000000000. "
+                "Consult ai-contained://aws-secrets/accounts to discover available accounts and their IDs."
+            )
 
         async def it_propagates_login_errors_to_the_caller(auth_setup) -> None:
             expected, client, auth_tool, mock = auth_setup
