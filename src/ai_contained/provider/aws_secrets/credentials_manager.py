@@ -111,7 +111,8 @@ class CredentialsManager(CredentialsManagerBase):
         ) as proc:
             stdout, _ = await proc.communicate()
         if proc.returncode != 0:
-            raise ToolError(f"credentials unavailable for {account.account_id}")
+            tool = "aws_auth_read" if role == Role.READ_ONLY else "aws_auth_write"
+            raise ToolError(f"Credentials unavailable for {account.account_id}: call {tool} to re-authenticate")
         env = {}
         for line in stdout.decode().splitlines():
             key, _, value = line.removeprefix("export ").partition("=")

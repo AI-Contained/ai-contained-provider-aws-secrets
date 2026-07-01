@@ -130,11 +130,22 @@ def describe_CredentialsManager():
             result = await CredentialsManager().fetch_credentials(Role.READ_ONLY, account)
             assert_that(result.expiration).is_none()
 
-        async def raises_when_command_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
+        @pytest.mark.parametrize(
+            "role, expected_tool",
+            [
+                pytest.param(Role.READ_ONLY, "aws_auth_read", id="read_only"),
+                pytest.param(Role.READ_WRITE, "aws_auth_write", id="read_write"),
+            ],
+        )
+        async def raises_with_recovery_hint_when_command_exits_nonzero(
+            role: Role, expected_tool: str, monkeypatch: pytest.MonkeyPatch
+        ) -> None:
             monkeypatch.setenv("MOCK_EXPORT_EXIT_CODE", "1")
-            account = make_account(read_profile="mock-profile", fetch_command=mock_export)
-            with pytest.raises(ToolError):
-                await CredentialsManager().fetch_credentials(Role.READ_ONLY, account)
+            account = make_account(read_profile="mock-profile", write_profile="mock-profile", fetch_command=mock_export)
+            expected = f"Credentials unavailable for {account.account_id}: call {expected_tool} to re-authenticate"
+            with pytest.raises(ToolError) as exc_info:
+                await CredentialsManager().fetch_credentials(role, account)
+            assert_that(str(exc_info.value)).is_equal_to(expected)
 
     def describe_login():
         @pytest.fixture
