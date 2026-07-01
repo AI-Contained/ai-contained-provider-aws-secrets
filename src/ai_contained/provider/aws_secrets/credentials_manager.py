@@ -175,7 +175,8 @@ class CredentialsManager(CredentialsManagerBase):
                     )
                 )
 
-            result = await ctx.elicit(message="".join(captured_stdout), response_type=None)
+            login_hint = "\nAfter completing login in your browser, click Accept to continue."
+            result = await ctx.elicit(message="".join(captured_stdout) + login_hint, response_type=None)
             if result.action != "accept":
                 raise ToolError(f"The user has cancelled the login request to {account.name} ({account.account_id})")
 

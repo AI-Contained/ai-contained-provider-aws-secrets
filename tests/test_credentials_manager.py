@@ -157,14 +157,20 @@ def describe_CredentialsManager():
                 "Click Allow to check again, or Decline to cancel."
             )
 
+            LOGIN_HINT = "After completing login in your browser, click Accept to continue."
+
             def _decline_asserting_url(msg, rtype, params, ctx):
-                assert_that(msg).ends_with("\n")
-                assert_that(msg.splitlines()[-1]).starts_with("https://")
+                lines = msg.splitlines()
+                assert_that(lines[-3]).starts_with("https://")
+                assert_that(lines[-2]).is_empty()
+                assert_that(lines[-1]).is_equal_to(LOGIN_HINT)
                 return ("decline", None)
 
             def _accept_asserting_url(msg, rtype, params, ctx):
-                assert_that(msg).ends_with("\n")
-                assert_that(msg.splitlines()[-1]).starts_with("https://")
+                lines = msg.splitlines()
+                assert_that(lines[-3]).starts_with("https://")
+                assert_that(lines[-2]).is_empty()
+                assert_that(lines[-1]).is_equal_to(LOGIN_HINT)
                 return ("accept", None)
 
             # Success cases only assert is_error=False — the return value is "ok" from
