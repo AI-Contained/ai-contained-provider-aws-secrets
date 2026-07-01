@@ -108,7 +108,7 @@ def describe_AwsAuthTool():
             credential: Credential
 
             def auth_prompt(self) -> str:
-                return f"I'd like ReadOnly AWS Access to {self.name} ({self.account_id}). (using tool: aws_auth_read)"
+                return f"I'd like ReadOnly AWS Access to {self.name}({self.account_id}). (using tool: aws_auth_read)"
 
         @dataclass
         class Mock:
@@ -116,7 +116,8 @@ def describe_AwsAuthTool():
             elicitor: Elicitor
 
         @pytest.fixture
-        async def auth_setup():
+        async def auth_setup(monkeypatch: pytest.MonkeyPatch):
+            monkeypatch.setenv("COLOR", "off")
             expected_name = "Test"
             expected = Expected(
                 account_id="123456789012",
