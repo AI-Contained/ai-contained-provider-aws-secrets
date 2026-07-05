@@ -3,7 +3,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from assertpy import assert_that
-from conftest import MockCredentialsManager
+from conftest import LocalHarness, MockCredentialsManager
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
@@ -12,7 +12,6 @@ from ai_contained.provider import aws_secrets
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.aws_accounts_resource import AwsAccountResourceEntry, AwsAccountsResource
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
-from ai_contained.provider.aws_secrets.testing import LocalHarness
 from ai_contained.provider.aws_secrets.types import AccessStatus, Role
 from ai_contained.trust import server as trust_server
 

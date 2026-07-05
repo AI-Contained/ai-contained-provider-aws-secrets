@@ -6,11 +6,11 @@ from dataclasses import dataclass
 import httpx
 import pytest
 from assertpy import assert_that
+from conftest import LocalHarness
 
 from ai_contained.core.mcp.harness import ExecResponse
 from ai_contained.provider import aws_secrets
 from ai_contained.provider.aws_secrets.credentials_manager import Credential
-from ai_contained.provider.aws_secrets.testing import LocalHarness
 from ai_contained.trust import server as trust_server
 from ai_contained.trust.client import TrustClient
 from ai_contained.trust.client.trust_connection import TrustConnection
