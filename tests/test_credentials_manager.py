@@ -1,5 +1,5 @@
 import os
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -38,53 +38,49 @@ def make_account(
 
 def describe_CredentialsManager():
     def describe_aws_env():
-        async def uses_AWS_HOME_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+        async def uses_AWS_HOME_when_set() -> None:
             expected = "/secrets/aws-secrets"
-            monkeypatch.setenv("AWS_HOME", expected)
-            monkeypatch.setenv("AWS_ACCOUNTS_CONFIG_PATH", "/elsewhere/accounts.json5")
-            result = CredentialsManager()._aws_env()
+            manager = CredentialsManager(
+                {"AWS_HOME": expected, "AWS_ACCOUNTS_CONFIG_PATH": "/elsewhere/accounts.json5"}
+            )
+            result = manager._aws_env()
             assert_that(result["HOME"]).is_equal_to(expected)
 
-        async def falls_back_to_dirname_of_AWS_ACCOUNTS_CONFIG_PATH(monkeypatch: pytest.MonkeyPatch) -> None:
+        async def falls_back_to_dirname_of_AWS_ACCOUNTS_CONFIG_PATH() -> None:
             expected = "/secrets/aws-secrets"
-            monkeypatch.delenv("AWS_HOME", raising=False)
-            monkeypatch.setenv("AWS_ACCOUNTS_CONFIG_PATH", f"{expected}/accounts.json5")
-            result = CredentialsManager()._aws_env()
+            manager = CredentialsManager({"AWS_ACCOUNTS_CONFIG_PATH": f"{expected}/accounts.json5"})
+            result = manager._aws_env()
             assert_that(result["HOME"]).is_equal_to(expected)
 
-        async def leaves_HOME_alone_when_neither_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+        async def leaves_HOME_alone_when_neither_is_set() -> None:
             expected = "/root"
-            monkeypatch.delenv("AWS_HOME", raising=False)
-            monkeypatch.delenv("AWS_ACCOUNTS_CONFIG_PATH", raising=False)
-            monkeypatch.setenv("HOME", expected)
-            result = CredentialsManager()._aws_env()
+            result = CredentialsManager({"HOME": expected})._aws_env()
             assert_that(result["HOME"]).is_equal_to(expected)
 
-        async def applies_kwargs_as_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+        async def applies_kwargs_as_overrides() -> None:
             expected = "test-read"
-            result = CredentialsManager()._aws_env(AWS_PROFILE=expected)
+            result = CredentialsManager({})._aws_env(AWS_PROFILE=expected)
             assert_that(result["AWS_PROFILE"]).is_equal_to(expected)
 
     def describe_validate():
         mock_sts = str(Path(__file__).parent / "bin" / "mock_aws_sts.sh")
 
-        async def returns_false_when_command_exits_nonzero(monkeypatch: pytest.MonkeyPatch) -> None:
-            monkeypatch.setenv("MOCK_STS_EXIT_CODE", "1")
+        async def returns_false_when_command_exits_nonzero() -> None:
             expected = make_account(read_profile="mock-profile", check_command=mock_sts)
-            result = await CredentialsManager().validate(Role.READ_ONLY, expected)
+            result = await CredentialsManager({"MOCK_STS_EXIT_CODE": "1"}).validate(Role.READ_ONLY, expected)
             assert_that(result).is_false()
 
-        async def returns_true_when_account_id_matches(monkeypatch: pytest.MonkeyPatch) -> None:
+        async def returns_true_when_account_id_matches() -> None:
             expected = make_account(account_id="123456789012", read_profile="mock-profile", check_command=mock_sts)
-            monkeypatch.setenv("MOCK_STS_ACCOUNT_ID", expected.account_id)
-            result = await CredentialsManager().validate(Role.READ_ONLY, expected)
+            manager = CredentialsManager({"MOCK_STS_ACCOUNT_ID": expected.account_id})
+            result = await manager.validate(Role.READ_ONLY, expected)
             assert_that(result).is_true()
 
-        async def raises_when_account_id_does_not_match(monkeypatch: pytest.MonkeyPatch) -> None:
-            monkeypatch.setenv("MOCK_STS_ACCOUNT_ID", "999999999999")
+        async def raises_when_account_id_does_not_match() -> None:
             expected = make_account(account_id="123456789012", read_profile="mock-profile", check_command=mock_sts)
+            manager = CredentialsManager({"MOCK_STS_ACCOUNT_ID": "999999999999"})
             with pytest.raises(ToolError) as exc_info:
-                await CredentialsManager().validate(Role.READ_ONLY, expected)
+                await manager.validate(Role.READ_ONLY, expected)
             assert_that(str(exc_info.value)).contains(f"expected '{expected.account_id}'")
 
         async def raises_when_response_is_not_valid_json() -> None:
@@ -93,7 +89,7 @@ def describe_CredentialsManager():
                 check_command="/bin/sh -c 'echo not-json; exit 0'",
             )
             with pytest.raises(ToolError) as exc_info:
-                await CredentialsManager().validate(Role.READ_ONLY, account)
+                await CredentialsManager({}).validate(Role.READ_ONLY, account)
             assert_that(str(exc_info.value)).contains("invalid response")
 
         async def raises_when_response_is_missing_account_key() -> None:
@@ -102,32 +98,36 @@ def describe_CredentialsManager():
                 check_command='/bin/sh -c \'echo {"UserId": "foo"}; exit 0\'',
             )
             with pytest.raises(ToolError) as exc_info:
-                await CredentialsManager().validate(Role.READ_ONLY, account)
+                await CredentialsManager({}).validate(Role.READ_ONLY, account)
             assert_that(str(exc_info.value)).contains("invalid response")
 
     def describe_fetch_credentials():
         mock_export = str(Path(__file__).parent / "bin" / "mock_aws_export.sh")
 
-        async def returns_credential_with_env_and_expiration(monkeypatch: pytest.MonkeyPatch) -> None:
+        async def returns_credential_with_env_and_expiration() -> None:
             expected_env = {
                 "AWS_ACCESS_KEY_ID": "AKID123",
                 "AWS_SECRET_ACCESS_KEY": "SECRET123",
                 "AWS_SESSION_TOKEN": "TOKEN123",
             }
             expected_expiration = "2026-06-01T11:12:44+00:00"
-            monkeypatch.setenv("MOCK_EXPORT_ACCESS_KEY_ID", expected_env["AWS_ACCESS_KEY_ID"])
-            monkeypatch.setenv("MOCK_EXPORT_SECRET_ACCESS_KEY", expected_env["AWS_SECRET_ACCESS_KEY"])
-            monkeypatch.setenv("MOCK_EXPORT_SESSION_TOKEN", expected_env["AWS_SESSION_TOKEN"])
-            monkeypatch.setenv("MOCK_EXPORT_EXPIRATION", expected_expiration)
+            manager = CredentialsManager(
+                {
+                    "MOCK_EXPORT_ACCESS_KEY_ID": expected_env["AWS_ACCESS_KEY_ID"],
+                    "MOCK_EXPORT_SECRET_ACCESS_KEY": expected_env["AWS_SECRET_ACCESS_KEY"],
+                    "MOCK_EXPORT_SESSION_TOKEN": expected_env["AWS_SESSION_TOKEN"],
+                    "MOCK_EXPORT_EXPIRATION": expected_expiration,
+                }
+            )
             account = make_account(read_profile="mock-profile", fetch_command=mock_export)
-            result = await CredentialsManager().fetch_credentials(Role.READ_ONLY, account)
+            result = await manager.fetch_credentials(Role.READ_ONLY, account)
             assert_that(result.env).is_equal_to(expected_env)
             assert_that(result.expiration).is_equal_to(expected_expiration)
 
-        async def returns_none_expiration_when_not_present(monkeypatch: pytest.MonkeyPatch) -> None:
-            monkeypatch.setenv("MOCK_EXPORT_INCLUDE_EXPIRATION", "0")
+        async def returns_none_expiration_when_not_present() -> None:
+            manager = CredentialsManager({"MOCK_EXPORT_INCLUDE_EXPIRATION": "0"})
             account = make_account(read_profile="mock-profile", fetch_command=mock_export)
-            result = await CredentialsManager().fetch_credentials(Role.READ_ONLY, account)
+            result = await manager.fetch_credentials(Role.READ_ONLY, account)
             assert_that(result.expiration).is_none()
 
         @pytest.mark.parametrize(
@@ -137,14 +137,12 @@ def describe_CredentialsManager():
                 pytest.param(Role.READ_WRITE, "aws_auth_write", id="read_write"),
             ],
         )
-        async def raises_with_recovery_hint_when_command_exits_nonzero(
-            role: Role, expected_tool: str, monkeypatch: pytest.MonkeyPatch
-        ) -> None:
-            monkeypatch.setenv("MOCK_EXPORT_EXIT_CODE", "1")
+        async def raises_with_recovery_hint_when_command_exits_nonzero(role: Role, expected_tool: str) -> None:
+            manager = CredentialsManager({"MOCK_EXPORT_EXIT_CODE": "1"})
             account = make_account(read_profile="mock-profile", write_profile="mock-profile", fetch_command=mock_export)
             expected = f"Credentials unavailable for {account.account_id}: call {expected_tool} to re-authenticate"
             with pytest.raises(ToolError) as exc_info:
-                await CredentialsManager().fetch_credentials(role, account)
+                await manager.fetch_credentials(role, account)
             assert_that(str(exc_info.value)).is_equal_to(expected)
 
     def describe_login():
@@ -158,7 +156,7 @@ def describe_CredentialsManager():
             async def raises_immediately() -> None:
                 account = make_account(read_profile="some-profile", login_type=LoginType.PREAUTH)
                 with pytest.raises(ToolError) as exc_info:
-                    await CredentialsManager().login(None, Role.READ_ONLY, account)  # type: ignore[arg-type]
+                    await CredentialsManager({}).login(None, Role.READ_ONLY, account)  # type: ignore[arg-type]
                 assert_that(str(exc_info.value)).is_equal_to("credentials invalid — fix externally and retry")
 
         def describe_sso():
@@ -195,20 +193,17 @@ def describe_CredentialsManager():
                     command=str(Path(__file__).parent / "bin" / "mock_aws_sso_login.sh"),
                 )
 
-            @pytest.fixture
-            async def client(
-                elicitor: Elicitor, mock_account: Account
-            ) -> AsyncGenerator[Client[FastMCPTransport], None]:
+            def _sso_client(elicitor: Elicitor, account: Account, environ: dict[str, str]) -> Client[FastMCPTransport]:
+                """A client whose fake_login tool runs login() with the given subprocess env."""
                 server = FastMCP("test")
-                credentials_manager = CredentialsManager()
+                credentials_manager = CredentialsManager(environ)
 
                 @server.tool()
                 async def fake_login(ctx: Context) -> str:
-                    await credentials_manager.login(ctx, Role.READ_ONLY, mock_account)
+                    await credentials_manager.login(ctx, Role.READ_ONLY, account)
                     return "ok"
 
-                async with Client(transport=server, elicitation_handler=elicitor) as c:
-                    yield c
+                return Client(transport=server, elicitation_handler=elicitor)
 
             async def raises_when_sso_command_does_not_exist(elicitor: Elicitor) -> None:
                 account = make_account(
@@ -216,14 +211,7 @@ def describe_CredentialsManager():
                     login_type=LoginType.SSO,
                     command="non-existent-command",
                 )
-                server = FastMCP("test")
-
-                @server.tool()
-                async def fake_login(ctx: Context) -> str:
-                    await CredentialsManager().login(ctx, Role.READ_ONLY, account)
-                    return "ok"
-
-                async with Client(transport=server, elicitation_handler=elicitor) as c:
+                async with _sso_client(elicitor, account, {}) as c:
                     result = WrapCallToolResult(**vars(await c.call_tool("fake_login", {}, raise_on_error=False)))
 
                 assert_that(result.is_error).is_true()
@@ -241,69 +229,55 @@ def describe_CredentialsManager():
                         **expected, exit_code=int(expected["exit_status"])
                     ),
                 )
-                server = FastMCP("test")
-
-                @server.tool()
-                async def fake_login(ctx: Context) -> str:
-                    await CredentialsManager().login(ctx, Role.READ_ONLY, account)
-                    return "ok"
-
-                async with Client(transport=server, elicitation_handler=elicitor) as c:
+                async with _sso_client(elicitor, account, {}) as c:
                     result = WrapCallToolResult(**vars(await c.call_tool("fake_login", {}, raise_on_error=False)))
 
                 assert_that(result.is_error).is_true()
                 assert_that(result.json()).is_equal_to(expected)
 
-            async def raises_when_user_declines_initial_elicitation(
-                client: Client[FastMCPTransport], elicitor: Elicitor
-            ) -> None:
+            async def raises_when_user_declines_initial_elicitation(elicitor: Elicitor, mock_account: Account) -> None:
                 elicitor.on_elicit(_decline_asserting_url)
-                result = await client.call_tool("fake_login", {}, raise_on_error=False)
+                async with _sso_client(elicitor, mock_account, {}) as c:
+                    result = await c.call_tool("fake_login", {}, raise_on_error=False)
                 assert_that(result.is_error).is_true()
 
             async def raises_when_sso_command_exits_nonzero(
-                client: Client[FastMCPTransport], elicitor: Elicitor, monkeypatch: pytest.MonkeyPatch
+                elicitor: Elicitor, mock_account: Account, monkeypatch: pytest.MonkeyPatch
             ) -> None:
                 monkeypatch.setattr(Elicitor, "__call__", with_accept_fallback)
-                monkeypatch.setenv("MOCK_SSO_EXIT_CODE", "1")
                 elicitor.on_elicit(_accept_asserting_url)
-                result = await client.call_tool("fake_login", {}, raise_on_error=False)
+                async with _sso_client(elicitor, mock_account, {"MOCK_SSO_EXIT_CODE": "1"}) as c:
+                    result = await c.call_tool("fake_login", {}, raise_on_error=False)
                 assert_that(result.is_error).is_true()
 
             async def succeeds_when_user_accepts_and_command_exits_zero(
-                client: Client[FastMCPTransport], elicitor: Elicitor, monkeypatch: pytest.MonkeyPatch
+                elicitor: Elicitor, mock_account: Account, monkeypatch: pytest.MonkeyPatch
             ) -> None:
                 monkeypatch.setattr(Elicitor, "__call__", with_accept_fallback)
                 elicitor.on_elicit(_accept_asserting_url)
-                result = await client.call_tool("fake_login", {}, raise_on_error=False)
+                async with _sso_client(elicitor, mock_account, {}) as c:
+                    result = await c.call_tool("fake_login", {}, raise_on_error=False)
                 assert_that(result.is_error).is_false()
                 # return value not asserted — it's "ok" from fake_login, not from login()
 
             async def raises_when_user_declines_while_waiting_for_aws(
-                client: Client[FastMCPTransport],
-                elicitor: Elicitor,
-                monkeypatch: pytest.MonkeyPatch,
-                tmp_path: Path,
+                elicitor: Elicitor, mock_account: Account, tmp_path: Path
             ) -> None:
                 fifo = tmp_path / "sso.fifo"
                 os.mkfifo(fifo)
-                monkeypatch.setenv("MOCK_SSO_FIFO", str(fifo))
                 elicitor.on_elicit(_accept_asserting_url)
                 elicitor.decline(expect_message=LOOP_ELICITATION_MESSAGE)
-                result = await client.call_tool("fake_login", {}, raise_on_error=False)
+                async with _sso_client(elicitor, mock_account, {"MOCK_SSO_FIFO": str(fifo)}) as c:
+                    result = await c.call_tool("fake_login", {}, raise_on_error=False)
                 assert_that(result.is_error).is_true()
 
             @pytest.mark.skip(reason="reliably fails on GHA with McpError: [Errno 32] Broken pipe")
             async def succeeds_after_waiting_for_aws_to_confirm(
-                client: Client[FastMCPTransport],
-                elicitor: Elicitor,
-                monkeypatch: pytest.MonkeyPatch,
-                tmp_path: Path,
+                elicitor: Elicitor, mock_account: Account, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
             ) -> None:
                 monkeypatch.setattr(Elicitor, "__call__", with_accept_fallback)
                 fifo = tmp_path / "sso.fifo"
                 os.mkfifo(fifo)
-                monkeypatch.setenv("MOCK_SSO_FIFO", str(fifo))
                 elicitor.on_elicit(_accept_asserting_url)
 
                 def accept_and_unblock(msg, rtype, params, ctx):
@@ -314,5 +288,6 @@ def describe_CredentialsManager():
                     return ("accept", None)
 
                 elicitor.on_elicit(accept_and_unblock)
-                result = await client.call_tool("fake_login", {}, raise_on_error=False)
+                async with _sso_client(elicitor, mock_account, {"MOCK_SSO_FIFO": str(fifo)}) as c:
+                    result = await c.call_tool("fake_login", {}, raise_on_error=False)
                 assert_that(result.is_error).is_false()

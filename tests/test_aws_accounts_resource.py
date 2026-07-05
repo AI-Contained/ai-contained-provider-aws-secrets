@@ -3,15 +3,18 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from assertpy import assert_that
+from conftest import MockCredentialsManager
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from ai_contained.provider.aws_secrets import register
+from ai_contained.core.mcp.harness import ExecResponse, Harness
+from ai_contained.provider import aws_secrets
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.aws_accounts_resource import AwsAccountResourceEntry, AwsAccountsResource
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
 from ai_contained.provider.aws_secrets.types import AccessStatus, Role
+from ai_contained.trust import server as trust_server
 
 
 def assert_account_entry(result: AwsAccountResourceEntry | None, expected: AwsAccountResourceEntry) -> None:
@@ -29,11 +32,15 @@ def describe_AwsAccountsResource():
 
     @pytest.fixture
     def aws_auth_read() -> AwsAuthTool:
-        return AwsAuthTool(Role.READ_ONLY, Accounts('{ login: { type: "sso" }, accounts: {} }'))
+        return AwsAuthTool(
+            {}, MockCredentialsManager(), Role.READ_ONLY, Accounts('{ login: { type: "sso" }, accounts: {} }')
+        )
 
     @pytest.fixture
     def aws_auth_write() -> AwsAuthTool:
-        return AwsAuthTool(Role.READ_WRITE, Accounts('{ login: { type: "sso" }, accounts: {} }'))
+        return AwsAuthTool(
+            {}, MockCredentialsManager(), Role.READ_WRITE, Accounts('{ login: { type: "sso" }, accounts: {} }')
+        )
 
     def describe_convert():
         def it_includes_name_and_trust_groups(account_id, aws_auth_read, aws_auth_write) -> None:
@@ -215,29 +222,37 @@ def describe_AwsAccountsResource():
 
     def describe_get():
         @pytest.fixture
-        async def client(
-            account_id: str, aws_auth_read: AwsAuthTool, aws_auth_write: AwsAuthTool
-        ) -> AsyncGenerator[Client[FastMCPTransport], None]:
-            server = FastMCP("test")
-            await register(
-                server,
-                _accounts=Accounts(f"""
-                {{
-                    login: {{ type: "sso" }},
-                    accounts: {{
-                        "{account_id}": {{
-                            name: "StagingAlpha",
-                            trust_groups: ["ProjectRocket"],
-                            read_profile: "staging-alpha-read",
-                            write_profile: "staging-alpha-write",
-                        }},
+        async def harness(account_id: str) -> AsyncGenerator[Harness, None]:
+            accounts_json = f"""
+            {{
+                login: {{ type: "sso" }},
+                accounts: {{
+                    "{account_id}": {{
+                        name: "StagingAlpha",
+                        trust_groups: ["ProjectRocket"],
+                        read_profile: "staging-alpha-read",
+                        write_profile: "staging-alpha-write",
                     }},
-                }}
-                """),
-                _auth_read=aws_auth_read,
-                _auth_write=aws_auth_write,
-            )
-            async with Client(transport=server) as c:
+                }},
+            }}
+            """
+            async with Harness(env={"TRUST_CLIENTS": "127.0.0.1"}) as h:
+                await h.install(trust_server.provide)
+                path = h.write("accounts.json5", accounts_json)
+                await h.install(aws_secrets.provide, env={"AWS_ACCOUNTS_CONFIG_PATH": path})
+
+                # The real CredentialsManager shells out to aws — answer via shims.
+                h.exec("aws").on("sts", "get-caller-identity").returns(
+                    ExecResponse(stdout=json.dumps({"Account": account_id}))
+                )
+                h.exec("aws").on("configure", "export-credentials").returns(
+                    ExecResponse(stdout="export AWS_ACCESS_KEY_ID=AKID\n")
+                )
+                yield h
+
+        @pytest.fixture
+        async def client(harness: Harness) -> AsyncGenerator[Client[FastMCPTransport], None]:
+            async with Client(transport=harness.mcp) as c:
                 yield c
 
         async def it_registers_the_resource(client: Client[FastMCPTransport]) -> None:
@@ -245,9 +260,13 @@ def describe_AwsAccountsResource():
             assert_that([str(r.uri) for r in resources]).contains("ai-contained://aws-secrets/accounts")
 
         async def it_reflects_authorization_state(
-            client: Client[FastMCPTransport], account_id: str, aws_auth_read: AwsAuthTool
+            client: Client[FastMCPTransport], harness: Harness, account_id: str
         ) -> None:
-            aws_auth_read.authorize(account_id)
+            harness.elicit.accept()
+            async with harness.client() as c:
+                result = await c.tool("aws_auth_read")(account_id=account_id)
+                assert_that(result.is_error).is_false()
+                assert_that(result.json()).is_equal_to({account_id: {"name": "StagingAlpha", "expires_at": None}})
             content = await client.read_resource("ai-contained://aws-secrets/accounts")
             data = json.loads(content[0].text)
             assert_that(data[account_id]["read_only"]).is_equal_to("authorized")

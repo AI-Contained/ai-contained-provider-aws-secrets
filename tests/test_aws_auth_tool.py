@@ -8,12 +8,15 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 
+from ai_contained.core.mcp import ProviderContext
+from ai_contained.core.mcp.harness import Harness
 from ai_contained.core.mcp.testing import Elicitor
-from ai_contained.provider.aws_secrets import register
+from ai_contained.provider.aws_secrets import provide
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
 from ai_contained.provider.aws_secrets.credentials_manager import Credential
 from ai_contained.provider.aws_secrets.types import Role
+from ai_contained.trust import server as trust_server
 
 
 def describe_AwsAuthTool():
@@ -22,7 +25,9 @@ def describe_AwsAuthTool():
 
         @pytest.fixture
         def auth_tool():
-            return AwsAuthTool(Role.READ_ONLY, Accounts('{ login: { type: "sso" }, accounts: {} }'))
+            return AwsAuthTool(
+                {}, MockCredentialsManager(), Role.READ_ONLY, Accounts('{ login: { type: "sso" }, accounts: {} }')
+            )
 
         def it_returns_false_by_default(auth_tool: AwsAuthTool) -> None:
             assert_that(auth_tool.is_authorized(ACCOUNT_ID)).is_false()
@@ -52,7 +57,9 @@ def describe_AwsAuthTool():
 
         @pytest.fixture
         def auth_tool():
-            return AwsAuthTool(Role.READ_ONLY, Accounts('{ login: { type: "sso" }, accounts: {} }'))
+            return AwsAuthTool(
+                {}, MockCredentialsManager(), Role.READ_ONLY, Accounts('{ login: { type: "sso" }, accounts: {} }')
+            )
 
         def it_does_not_raise_when_revoking_unknown_account(auth_tool: AwsAuthTool) -> None:
             auth_tool.revoke(ACCOUNT_A)
@@ -78,26 +85,28 @@ def describe_AwsAuthTool():
             assert_that(auth_tool.is_authorized(ACCOUNT_A)).is_false()
             assert_that(auth_tool.is_authorized(ACCOUNT_B)).is_false()
 
-    def describe_register():
+    def describe_provide():
         async def it_registers_nothing_when_no_config_path_is_set() -> None:
             mcp = FastMCP("test")
 
-            await register(mcp)
+            state = await provide(ProviderContext(mcp, {}))
 
+            assert_that(state).is_none()
             assert_that(await mcp.list_tools()).is_empty()
 
         async def it_exposes_read_and_write_tools() -> None:
-            mcp = FastMCP("test")
-            accounts = Accounts("""
+            accounts_json = """
             {
                 login: { type: "sso" },
                 accounts: { "123456789012": { name: "Test", read_profile: "test-read" } },
             }
-            """)
+            """
+            async with Harness(env={"TRUST_CLIENTS": "127.0.0.1"}) as h:
+                await h.install(trust_server.provide)
+                path = h.write("accounts.json5", accounts_json)
+                await h.install(provide, env={"AWS_ACCOUNTS_CONFIG_PATH": path})
 
-            await register(mcp, _accounts=accounts)
-
-            tool_names = [t.name for t in await mcp.list_tools()]
+                tool_names = [t.name for t in await h.mcp.list_tools()]
             assert_that(tool_names).contains("aws_auth_read", "aws_auth_write")
 
     def describe_authenticate():
@@ -116,8 +125,7 @@ def describe_AwsAuthTool():
             elicitor: Elicitor
 
         @pytest.fixture
-        async def auth_setup(monkeypatch: pytest.MonkeyPatch):
-            monkeypatch.setenv("COLOR", "off")
+        async def auth_setup():
             expected_name = "Test"
             expected = Expected(
                 account_id="123456789012",
@@ -135,9 +143,9 @@ def describe_AwsAuthTool():
                     name: "{expected.name}", read_profile: "test-read", write_profile: "test-write"
                 }} }},
             }}""")
-            auth_tool = AwsAuthTool(Role.READ_ONLY, accounts, mock.credentials_manager)
+            auth_tool = AwsAuthTool({"COLOR": "off"}, mock.credentials_manager, Role.READ_ONLY, accounts)
             mcp = FastMCP("test")
-            await register(mcp, _accounts=accounts, _auth_read=auth_tool)
+            mcp.tool(name="aws_auth_read")(auth_tool.authenticate)
             async with Client(transport=mcp, elicitation_handler=mock.elicitor) as c:
                 yield expected, c, auth_tool, mock
             assert not mock.elicitor._queue, f"{len(mock.elicitor._queue)} elicitation step(s) were never triggered"

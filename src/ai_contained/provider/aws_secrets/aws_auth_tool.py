@@ -1,42 +1,42 @@
 """MCP tool implementation for AWS account authentication."""
 
 import hashlib
-import os
 from typing import Any
 
 from fastmcp import Context
 from fastmcp import tools as mcp
 from fastmcp.exceptions import ToolError
 
+from ai_contained.core.mcp import Environ
 from ai_contained.provider.aws_secrets.accounts import Accounts
-from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManager, CredentialsManagerBase
+from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManagerBase
 from ai_contained.provider.aws_secrets.types import AwsAccountId, Role
 
 
 class _Color:
     """ANSI colorizer for elicitation messages. Disabled via COLOR != 'ascii'."""
 
-    @staticmethod
-    def _wrap(ansi: str, text: str) -> str:
-        if os.environ.get("COLOR", "ascii") != "ascii":
+    def __init__(self, environ: Environ) -> None:
+        """Read the COLOR toggle once from the given environment."""
+        self._enabled = environ.get("COLOR", "ascii") == "ascii"
+
+    def _wrap(self, ansi: str, text: str) -> str:
+        if not self._enabled:
             return text
         return f"\033[{ansi}m{text}\033[0m"
 
-    @staticmethod
-    def role(name: str) -> str:
+    def role(self, name: str) -> str:
         """Green for aws_auth_read, red for aws_auth_write."""
-        return _Color._wrap("32" if name == "aws_auth_read" else "31", name)
+        return self._wrap("32" if name == "aws_auth_read" else "31", name)
 
-    @staticmethod
-    def id(account: str) -> str:
+    def id(self, account: str) -> str:
         """Dim gray — de-emphasizes the 12-digit account ID next to its human name."""
-        return _Color._wrap("38;5;245", account)
+        return self._wrap("38;5;245", account)
 
-    @staticmethod
-    def name(account_name: str) -> str:
+    def name(self, account_name: str) -> str:
         """Deterministic per-name hue, hashed into the 6×6×6 color cube (codes 17–231)."""
         code = (hashlib.blake2b(account_name.encode(), digest_size=1).digest()[0] % 215) + 17
-        return _Color._wrap(f"38;5;{code}", account_name)
+        return self._wrap(f"38;5;{code}", account_name)
 
 
 class AwsAuthTool:
@@ -44,14 +44,16 @@ class AwsAuthTool:
 
     def __init__(
         self,
+        environ: Environ,
+        authenticator: CredentialsManagerBase,
         role: Role,
         accounts: Accounts,
-        authenticator: CredentialsManagerBase = CredentialsManager(),
     ) -> None:
-        """Initialise for the given role with an optional custom credentials manager."""
+        """Initialise from the container's launch env with a credentials manager, for the given role."""
         self.role = role
         self.accounts = accounts
         self.authenticator = authenticator
+        self._color = _Color(environ)
         self._authorized: set[AwsAccountId] = set()
 
     def is_authorized(self, account_id: AwsAccountId) -> bool:
@@ -84,8 +86,8 @@ class AwsAuthTool:
             tool_name = "aws_auth_read" if self.role == Role.READ_ONLY else "aws_auth_write"
             result = await ctx.elicit(
                 message=(
-                    f"I'd like {role_label} AWS Access to {_Color.name(account.name)}"
-                    f"({_Color.id(account_id)}). (using tool: {_Color.role(tool_name)})"
+                    f"I'd like {role_label} AWS Access to {self._color.name(account.name)}"
+                    f"({self._color.id(account_id)}). (using tool: {self._color.role(tool_name)})"
                 ),
                 response_type=None,
             )

@@ -1,9 +1,6 @@
 """AWS Secrets provider for AI-Contained."""
 
-import os
-
-from fastmcp import FastMCP
-
+from ai_contained.core.mcp import ProviderContext
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.aws_accounts_resource import AwsAccountsResource
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
@@ -11,6 +8,7 @@ from ai_contained.provider.aws_secrets.aws_secret_route import AwsSecretRoute
 from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManager
 from ai_contained.provider.aws_secrets.types import Role
 from ai_contained.trust import server as trust_server
+from ai_contained.trust.server import TrustServer
 
 _AUTH_READ_DESCRIPTION = """\
 Authenticate to an AWS account with read-only access.
@@ -66,32 +64,27 @@ Notes:
 """
 
 
-async def register(
-    mcp: FastMCP,
-    *,
-    _accounts: Accounts | None = None,  # test injection only — overrides AWS_ACCOUNTS_CONFIG_PATH
-    _auth_read: AwsAuthTool | None = None,  # test injection only — overrides default AwsAuthTool
-    _auth_write: AwsAuthTool | None = None,  # test injection only — overrides default AwsAuthTool
-) -> None:
-    """Register all AWS secrets provider tools with the MCP server."""
-    if _accounts is None:
-        config_path = os.environ.get("AWS_ACCOUNTS_CONFIG_PATH")
-        if not config_path:
-            return
-        _accounts = Accounts(open(config_path).read())
+async def provide(ctx: ProviderContext) -> None:
+    """Register all AWS secrets provider tools; requires trust_server to be loaded first."""
+    config_path = ctx.environ.get("AWS_ACCOUNTS_CONFIG_PATH")
+    if not config_path:
+        return None
+    accounts = Accounts(open(config_path).read())
 
     # auth_read and auth_write are shared across all components — the same instances
     # are passed to every resource and tool so that authorize() called by one is
     # immediately visible to is_authorized() called by another.
-    authenticator = CredentialsManager()
-    auth_read = _auth_read or AwsAuthTool(Role.READ_ONLY, _accounts, authenticator)
-    auth_write = _auth_write or AwsAuthTool(Role.READ_WRITE, _accounts, authenticator)
+    authenticator = CredentialsManager(ctx.environ)
+    auth_read = AwsAuthTool(ctx.environ, authenticator, Role.READ_ONLY, accounts)
+    auth_write = AwsAuthTool(ctx.environ, authenticator, Role.READ_WRITE, accounts)
 
     # Bound methods hold a strong reference to self, keeping each component instance
     # (and the auth_read/auth_write it holds) alive for the lifetime of the server.
-    mcp.add_resource(AwsAccountsResource(_accounts, auth_read, auth_write).get)
-    mcp.tool(name="aws_auth_read", description=_AUTH_READ_DESCRIPTION)(auth_read.authenticate)
-    mcp.tool(name="aws_auth_write", description=_AUTH_WRITE_DESCRIPTION)(auth_write.authenticate)
+    ctx.mcp.add_resource(AwsAccountsResource(accounts, auth_read, auth_write).get)
+    ctx.mcp.tool(name="aws_auth_read", description=_AUTH_READ_DESCRIPTION)(auth_read.authenticate)
+    ctx.mcp.tool(name="aws_auth_write", description=_AUTH_WRITE_DESCRIPTION)(auth_write.authenticate)
 
+    trust = await ctx.ensure(trust_server.provide)
+    assert isinstance(trust, TrustServer)
     aws_secret_route = AwsSecretRoute(auth_read, auth_write)
-    trust_server.secret_route(mcp, role="aws")(aws_secret_route.handle)
+    trust.secret_route(role="aws")(aws_secret_route.register)
