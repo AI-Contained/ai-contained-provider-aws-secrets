@@ -1,16 +1,14 @@
 import os
-from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 from assertpy import assert_that
 from conftest import with_accept_fallback
-from fastmcp import Context, FastMCP
-from fastmcp.client import Client
-from fastmcp.client.transports import FastMCPTransport
+from fastmcp import Context
 from fastmcp.exceptions import ToolError
 
-from ai_contained.core.mcp.testing import Elicitor, WrapCallToolResult
+from ai_contained.core.mcp.harness import Harness
+from ai_contained.core.mcp.testing import Elicitor
 from ai_contained.provider.aws_secrets.accounts import Account, AccountLogin
 from ai_contained.provider.aws_secrets.credentials_manager import CredentialsManager
 from ai_contained.provider.aws_secrets.types import LoginType, Role
@@ -146,12 +144,6 @@ def describe_CredentialsManager():
             assert_that(str(exc_info.value)).is_equal_to(expected)
 
     def describe_login():
-        @pytest.fixture
-        def elicitor() -> Generator[Elicitor, None, None]:
-            e = Elicitor()
-            yield e
-            assert not e._queue, f"{len(e._queue)} elicitation step(s) were never triggered"
-
         def describe_preauth():
             async def raises_immediately() -> None:
                 account = make_account(read_profile="some-profile", login_type=LoginType.PREAUTH)
@@ -183,7 +175,7 @@ def describe_CredentialsManager():
                 return ("accept", None)
 
             # Success cases only assert is_error=False — the return value is "ok" from
-            # fake_login, not from login() itself, so it's not worth asserting here.
+            # test_login, not from login() itself, so it's not worth asserting here.
 
             @pytest.fixture
             def mock_account() -> Account:
@@ -193,26 +185,27 @@ def describe_CredentialsManager():
                     command=str(Path(__file__).parent / "bin" / "mock_aws_sso_login.sh"),
                 )
 
-            def _sso_client(elicitor: Elicitor, account: Account, environ: dict[str, str]) -> Client[FastMCPTransport]:
-                """A client whose fake_login tool runs login() with the given subprocess env."""
-                server = FastMCP("test")
-                credentials_manager = CredentialsManager(environ)
+            def _login_harness(account: Account, env: dict[str, str]) -> Harness:
+                """A harness whose test_login tool drives CredentialsManager.login() for the account."""
+                h = Harness(env=env)
+                credentials_manager = CredentialsManager(h.env)
 
-                @server.tool()
-                async def fake_login(ctx: Context) -> str:
+                @h.mcp.tool()
+                async def test_login(ctx: Context) -> str:
                     await credentials_manager.login(ctx, Role.READ_ONLY, account)
                     return "ok"
 
-                return Client(transport=server, elicitation_handler=elicitor)
+                return h
 
-            async def raises_when_sso_command_does_not_exist(elicitor: Elicitor) -> None:
+            async def raises_when_sso_command_does_not_exist() -> None:
                 account = make_account(
                     read_profile="mock-profile",
                     login_type=LoginType.SSO,
                     command="non-existent-command",
                 )
-                async with _sso_client(elicitor, account, {}) as c:
-                    result = WrapCallToolResult(**vars(await c.call_tool("fake_login", {}, raise_on_error=False)))
+                async with _login_harness(account, {}) as h:
+                    async with h.client() as c:
+                        result = await c.tool("test_login")()
 
                 assert_that(result.is_error).is_true()
                 error = result.json()
@@ -220,7 +213,7 @@ def describe_CredentialsManager():
                 assert_that(error["stdout"]).is_equal_to("")
                 assert_that(error["stderr"]).contains("non-existent-command")
 
-            async def raises_when_sso_command_exits_before_emitting_urls(elicitor: Elicitor) -> None:
+            async def raises_when_sso_command_exits_before_emitting_urls() -> None:
                 expected = {"exit_status": "2", "stdout": "out_line\n", "stderr": "err_line\n"}
                 account = make_account(
                     read_profile="mock-profile",
@@ -229,56 +222,58 @@ def describe_CredentialsManager():
                         **expected, exit_code=int(expected["exit_status"])
                     ),
                 )
-                async with _sso_client(elicitor, account, {}) as c:
-                    result = WrapCallToolResult(**vars(await c.call_tool("fake_login", {}, raise_on_error=False)))
+                async with _login_harness(account, {}) as h:
+                    async with h.client() as c:
+                        result = await c.tool("test_login")()
 
                 assert_that(result.is_error).is_true()
                 assert_that(result.json()).is_equal_to(expected)
 
-            async def raises_when_user_declines_initial_elicitation(elicitor: Elicitor, mock_account: Account) -> None:
-                elicitor.on_elicit(_decline_asserting_url)
-                async with _sso_client(elicitor, mock_account, {}) as c:
-                    result = await c.call_tool("fake_login", {}, raise_on_error=False)
+            async def raises_when_user_declines_initial_elicitation(mock_account: Account) -> None:
+                async with _login_harness(mock_account, {}) as h:
+                    h.elicit.on_elicit(_decline_asserting_url)
+                    async with h.client() as c:
+                        result = await c.tool("test_login")()
                 assert_that(result.is_error).is_true()
 
             async def raises_when_sso_command_exits_nonzero(
-                elicitor: Elicitor, mock_account: Account, monkeypatch: pytest.MonkeyPatch
+                mock_account: Account, monkeypatch: pytest.MonkeyPatch
             ) -> None:
                 monkeypatch.setattr(Elicitor, "__call__", with_accept_fallback)
-                elicitor.on_elicit(_accept_asserting_url)
-                async with _sso_client(elicitor, mock_account, {"MOCK_SSO_EXIT_CODE": "1"}) as c:
-                    result = await c.call_tool("fake_login", {}, raise_on_error=False)
+                async with _login_harness(mock_account, {"MOCK_SSO_EXIT_CODE": "1"}) as h:
+                    h.elicit.on_elicit(_accept_asserting_url)
+                    async with h.client() as c:
+                        result = await c.tool("test_login")()
                 assert_that(result.is_error).is_true()
 
             async def succeeds_when_user_accepts_and_command_exits_zero(
-                elicitor: Elicitor, mock_account: Account, monkeypatch: pytest.MonkeyPatch
+                mock_account: Account, monkeypatch: pytest.MonkeyPatch
             ) -> None:
                 monkeypatch.setattr(Elicitor, "__call__", with_accept_fallback)
-                elicitor.on_elicit(_accept_asserting_url)
-                async with _sso_client(elicitor, mock_account, {}) as c:
-                    result = await c.call_tool("fake_login", {}, raise_on_error=False)
+                async with _login_harness(mock_account, {}) as h:
+                    h.elicit.on_elicit(_accept_asserting_url)
+                    async with h.client() as c:
+                        result = await c.tool("test_login")()
                 assert_that(result.is_error).is_false()
-                # return value not asserted — it's "ok" from fake_login, not from login()
+                # return value not asserted — it's "ok" from test_login, not from login()
 
-            async def raises_when_user_declines_while_waiting_for_aws(
-                elicitor: Elicitor, mock_account: Account, tmp_path: Path
-            ) -> None:
+            async def raises_when_user_declines_while_waiting_for_aws(mock_account: Account, tmp_path: Path) -> None:
                 fifo = tmp_path / "sso.fifo"
                 os.mkfifo(fifo)
-                elicitor.on_elicit(_accept_asserting_url)
-                elicitor.decline(expect_message=LOOP_ELICITATION_MESSAGE)
-                async with _sso_client(elicitor, mock_account, {"MOCK_SSO_FIFO": str(fifo)}) as c:
-                    result = await c.call_tool("fake_login", {}, raise_on_error=False)
+                async with _login_harness(mock_account, {"MOCK_SSO_FIFO": str(fifo)}) as h:
+                    h.elicit.on_elicit(_accept_asserting_url)
+                    h.elicit.decline(expect_message=LOOP_ELICITATION_MESSAGE)
+                    async with h.client() as c:
+                        result = await c.tool("test_login")()
                 assert_that(result.is_error).is_true()
 
             @pytest.mark.skip(reason="reliably fails on GHA with McpError: [Errno 32] Broken pipe")
             async def succeeds_after_waiting_for_aws_to_confirm(
-                elicitor: Elicitor, mock_account: Account, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+                mock_account: Account, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
             ) -> None:
                 monkeypatch.setattr(Elicitor, "__call__", with_accept_fallback)
                 fifo = tmp_path / "sso.fifo"
                 os.mkfifo(fifo)
-                elicitor.on_elicit(_accept_asserting_url)
 
                 def accept_and_unblock(msg, rtype, params, ctx):
                     assert_that(msg).is_equal_to(LOOP_ELICITATION_MESSAGE)
@@ -287,7 +282,9 @@ def describe_CredentialsManager():
                         f.write("done\n")
                     return ("accept", None)
 
-                elicitor.on_elicit(accept_and_unblock)
-                async with _sso_client(elicitor, mock_account, {"MOCK_SSO_FIFO": str(fifo)}) as c:
-                    result = await c.call_tool("fake_login", {}, raise_on_error=False)
+                async with _login_harness(mock_account, {"MOCK_SSO_FIFO": str(fifo)}) as h:
+                    h.elicit.on_elicit(_accept_asserting_url)
+                    h.elicit.on_elicit(accept_and_unblock)
+                    async with h.client() as c:
+                        result = await c.tool("test_login")()
                 assert_that(result.is_error).is_false()

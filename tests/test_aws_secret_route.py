@@ -7,9 +7,10 @@ import httpx
 import pytest
 from assertpy import assert_that
 
-from ai_contained.core.mcp.harness import ExecResponse, Harness
+from ai_contained.core.mcp.harness import ExecResponse
 from ai_contained.provider import aws_secrets
 from ai_contained.provider.aws_secrets.credentials_manager import Credential
+from ai_contained.provider.aws_secrets.testing import LocalHarness
 from ai_contained.trust import server as trust_server
 from ai_contained.trust.client import TrustClient
 from ai_contained.trust.client.trust_connection import TrustConnection
@@ -31,13 +32,6 @@ def describe_AwsSecretRoute():
             lines.append(f"export AWS_CREDENTIAL_EXPIRATION={credential.expiration}")
         return "\n".join(lines) + "\n"
 
-    async def _authorize(harness: Harness, tool: str, account_id: str) -> None:
-        """Authorize the account the real way: the auth tool with an accepted elicitation."""
-        harness.elicit.accept()
-        async with harness.client() as c:
-            result = await c.tool(tool)(account_id=account_id)
-            assert_that(result.is_error).is_false()
-
     @pytest.fixture
     async def secret_setup() -> AsyncGenerator:
         expected_name = "Test"
@@ -57,7 +51,7 @@ def describe_AwsSecretRoute():
             }} }},
         }}"""
 
-        async with Harness(env={"TRUST_CLIENTS": "127.0.0.1"}) as h:
+        async with LocalHarness(env={"TRUST_CLIENTS": "127.0.0.1"}) as h:
             await h.install(trust_server.provide)
             path = h.write("accounts.json5", accounts_json)
             await h.install(aws_secrets.provide, env={"AWS_ACCOUNTS_CONFIG_PATH": path})
@@ -78,7 +72,7 @@ def describe_AwsSecretRoute():
 
     async def it_dispenses_credentials_to_authorized_callers(secret_setup) -> None:
         expected, client, harness = secret_setup
-        await _authorize(harness, "aws_auth_read", expected.account_id)
+        await harness.aws_auth_read(expected.account_id)
 
         result = await client.post({"account_id": expected.account_id, "role": "ReadOnly"})
 
@@ -87,7 +81,7 @@ def describe_AwsSecretRoute():
     async def it_dispenses_credentials_without_expiration(secret_setup) -> None:
         expected, client, harness = secret_setup
         credential = Credential(name=expected.name, env=expected.credential.env, expiration=None)
-        await _authorize(harness, "aws_auth_read", expected.account_id)
+        await harness.aws_auth_read(expected.account_id)
         harness.exec("aws").on("configure", "export-credentials").returns(
             ExecResponse(stdout=_export_stdout(credential))
         )
@@ -126,7 +120,7 @@ def describe_AwsSecretRoute():
 
     async def it_signals_session_expired_when_credentials_are_unavailable(secret_setup) -> None:
         expected, client, harness = secret_setup
-        await _authorize(harness, "aws_auth_read", expected.account_id)
+        await harness.aws_auth_read(expected.account_id)
         harness.exec("aws").on("configure", "export-credentials").returns(ExecResponse(exit_code=1))
 
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
@@ -164,7 +158,7 @@ def describe_AwsSecretRoute():
     async def it_dispenses_write_credentials_for_read_write_role(secret_setup) -> None:
         expected, client, harness = secret_setup
         credential = Credential(name=expected.name, env=expected.credential.env, expiration=None)
-        await _authorize(harness, "aws_auth_write", expected.account_id)
+        await harness.aws_auth_write(expected.account_id)
         harness.exec("aws").on("configure", "export-credentials").returns(
             ExecResponse(stdout=_export_stdout(credential))
         )

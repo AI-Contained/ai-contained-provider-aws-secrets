@@ -4,15 +4,15 @@ from collections.abc import AsyncGenerator
 import pytest
 from assertpy import assert_that
 from conftest import MockCredentialsManager
-from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from ai_contained.core.mcp.harness import ExecResponse, Harness
+from ai_contained.core.mcp.harness import ExecResponse
 from ai_contained.provider import aws_secrets
 from ai_contained.provider.aws_secrets.accounts import Accounts
 from ai_contained.provider.aws_secrets.aws_accounts_resource import AwsAccountResourceEntry, AwsAccountsResource
 from ai_contained.provider.aws_secrets.aws_auth_tool import AwsAuthTool
+from ai_contained.provider.aws_secrets.testing import LocalHarness
 from ai_contained.provider.aws_secrets.types import AccessStatus, Role
 from ai_contained.trust import server as trust_server
 
@@ -222,13 +222,19 @@ def describe_AwsAccountsResource():
 
     def describe_get():
         @pytest.fixture
-        async def harness(account_id: str) -> AsyncGenerator[Harness, None]:
+        def expected(account_id: str) -> dict:
+            """What aws_auth_read returns for the fixture account — expires_at is None
+            because the harness's export shim emits no AWS_CREDENTIAL_EXPIRATION line."""
+            return {account_id: {"name": "StagingAlpha", "expires_at": None}}
+
+        @pytest.fixture
+        async def harness(account_id: str, expected: dict) -> AsyncGenerator[LocalHarness, None]:
             accounts_json = f"""
             {{
                 login: {{ type: "sso" }},
                 accounts: {{
                     "{account_id}": {{
-                        name: "StagingAlpha",
+                        name: "{expected[account_id]["name"]}",
                         trust_groups: ["ProjectRocket"],
                         read_profile: "staging-alpha-read",
                         write_profile: "staging-alpha-write",
@@ -236,7 +242,7 @@ def describe_AwsAccountsResource():
                 }},
             }}
             """
-            async with Harness(env={"TRUST_CLIENTS": "127.0.0.1"}) as h:
+            async with LocalHarness(env={"TRUST_CLIENTS": "127.0.0.1"}) as h:
                 await h.install(trust_server.provide)
                 path = h.write("accounts.json5", accounts_json)
                 await h.install(aws_secrets.provide, env={"AWS_ACCOUNTS_CONFIG_PATH": path})
@@ -251,7 +257,7 @@ def describe_AwsAccountsResource():
                 yield h
 
         @pytest.fixture
-        async def client(harness: Harness) -> AsyncGenerator[Client[FastMCPTransport], None]:
+        async def client(harness: LocalHarness) -> AsyncGenerator[Client[FastMCPTransport], None]:
             async with Client(transport=harness.mcp) as c:
                 yield c
 
@@ -260,13 +266,10 @@ def describe_AwsAccountsResource():
             assert_that([str(r.uri) for r in resources]).contains("ai-contained://aws-secrets/accounts")
 
         async def it_reflects_authorization_state(
-            client: Client[FastMCPTransport], harness: Harness, account_id: str
+            client: Client[FastMCPTransport], harness: LocalHarness, account_id: str, expected: dict
         ) -> None:
-            harness.elicit.accept()
-            async with harness.client() as c:
-                result = await c.tool("aws_auth_read")(account_id=account_id)
-                assert_that(result.is_error).is_false()
-                assert_that(result.json()).is_equal_to({account_id: {"name": "StagingAlpha", "expires_at": None}})
+            result = await harness.aws_auth_read(account_id)
+            assert_that(result).is_equal_to(expected)
             content = await client.read_resource("ai-contained://aws-secrets/accounts")
             data = json.loads(content[0].text)
             assert_that(data[account_id]["read_only"]).is_equal_to("authorized")
