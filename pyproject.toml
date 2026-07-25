@@ -8,11 +8,17 @@ version = "0.2.0"
 description = "Dispenses AWS credentials to authorized consumers via the trust-server protocol."
 requires-python = ">=3.12"
 dependencies = [
-    # TODO: replace with named ">=0.4"/">=1.1" constraints once the branches are tagged
-    "ai-contained-core-mcp @ https://github.com/AI-Contained/ai-contained-base/archive/refs/heads/kill-singletons.zip#subdirectory=packages/core-mcp",
-    "ai-contained-provider-trust-server-daemon @ https://github.com/AI-Contained/ai-contained-provider-trust-server/archive/refs/heads/kill-singletons.zip#subdirectory=packages/daemon",
+    "ai-contained-core-mcp>=0.4.0",
+    "ai-contained-provider-trust-server-daemon>=1.1.0",
     "json5>=0.14.0",
 ]
+
+# Fallback sources — only consulted when nothing else already satisfies the name in
+# the current resolve (e.g. a sibling /opt/ directory in a monolithic image build).
+# Move these to tags once the branches are released; TODO tracks that.
+[tool.uv.sources]
+ai-contained-core-mcp = { git = "https://github.com/AI-Contained/ai-contained-base", subdirectory = "packages/core-mcp", branch = "kill-singletons" }
+ai-contained-provider-trust-server-daemon = { git = "https://github.com/AI-Contained/ai-contained-provider-trust-server", subdirectory = "packages/daemon", branch = "kill-singletons" }
 
 [project.optional-dependencies]
 dev = [
