@@ -19,6 +19,9 @@ dependencies = [
 [tool.uv.sources]
 ai-contained-core-mcp = { git = "https://github.com/AI-Contained/ai-contained-base", subdirectory = "packages/core-mcp", branch = "kill-singletons" }
 ai-contained-provider-trust-server-daemon = { git = "https://github.com/AI-Contained/ai-contained-provider-trust-server", subdirectory = "packages/daemon", branch = "kill-singletons" }
+# Transitive — pulled in via ai-contained-provider-trust-client[dev]. uv.sources is
+# not inherited from a dependency's own pyproject.toml, so it must be repeated here.
+ai-contained-provider-trust-server-client = { git = "https://github.com/AI-Contained/ai-contained-provider-trust-server", subdirectory = "packages/client", branch = "kill-singletons" }
 
 [project.optional-dependencies]
 dev = [
