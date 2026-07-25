@@ -25,7 +25,11 @@ ai-contained-provider-trust-server-client = { git = "https://github.com/AI-Conta
 
 [project.optional-dependencies]
 dev = [
-    "ai-contained-provider-trust-client @ https://github.com/AI-Contained/ai-contained-provider-trust-client/archive/refs/heads/kill-singletons.zip",
+    # Direct, not just an incidental transitive need: this repo's own tests import
+    # ai_contained.trust.client (TrustClient/TrustConnection) directly. Also required so
+    # the [tool.uv.sources] entry above binds — uv.sources only applies to names that
+    # appear as a direct requirement somewhere in this file, not purely-transitive ones.
+    "ai-contained-provider-trust-server-client>=1.1.0",
     "pytest>=8.0",
     "pytest-asyncio>=1.0",
     "pytest-describe>=3.1",
