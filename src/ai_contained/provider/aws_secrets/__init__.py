@@ -69,6 +69,13 @@ async def provide(ctx: ProviderContext) -> None:
     config_path = ctx.environ.get("AWS_ACCOUNTS_CONFIG_PATH")
     if not config_path:
         return None
+
+    # Resolved before any registration below: if trust_server hasn't loaded yet in
+    # this pass, the loader defers and retries this provider — which must not have
+    # registered anything yet, or the retry would register it twice.
+    trust = await ctx.ensure(trust_server.provide)
+    assert isinstance(trust, TrustServer)
+
     accounts = Accounts(open(config_path).read())
 
     # auth_read and auth_write are shared across all components — the same instances
@@ -84,7 +91,5 @@ async def provide(ctx: ProviderContext) -> None:
     ctx.mcp.tool(name="aws_auth_read", description=_AUTH_READ_DESCRIPTION)(auth_read.authenticate)
     ctx.mcp.tool(name="aws_auth_write", description=_AUTH_WRITE_DESCRIPTION)(auth_write.authenticate)
 
-    trust = await ctx.ensure(trust_server.provide)
-    assert isinstance(trust, TrustServer)
     aws_secret_route = AwsSecretRoute(auth_read, auth_write)
     trust.secret_route(role="aws")(aws_secret_route.register)
