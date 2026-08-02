@@ -17,11 +17,11 @@ dependencies = [
 # the current resolve (e.g. a sibling /opt/ directory in a monolithic image build).
 # Move these to tags once the branches are released; TODO tracks that.
 [tool.uv.sources]
-ai-contained-core-mcp = { git = "https://github.com/AI-Contained/ai-contained-base", subdirectory = "packages/core-mcp", branch = "kill-singletons" }
-ai-contained-provider-trust-server-daemon = { git = "https://github.com/AI-Contained/ai-contained-provider-trust-server", subdirectory = "packages/daemon", branch = "kill-singletons" }
+ai-contained-core-mcp = { url = "https://github.com/AI-Contained/ai-contained-base/archive/refs/heads/kill-singletons.zip", subdirectory = "packages/core-mcp" }
+ai-contained-provider-trust-server-daemon = { url = "https://github.com/AI-Contained/ai-contained-provider-trust-server/archive/refs/heads/kill-singletons.zip", subdirectory = "packages/daemon" }
 # Transitive — pulled in via ai-contained-provider-trust-client[dev]. uv.sources is
 # not inherited from a dependency's own pyproject.toml, so it must be repeated here.
-ai-contained-provider-trust-server-client = { git = "https://github.com/AI-Contained/ai-contained-provider-trust-server", subdirectory = "packages/client", branch = "kill-singletons" }
+ai-contained-provider-trust-server-client = { url = "https://github.com/AI-Contained/ai-contained-provider-trust-server/archive/refs/heads/kill-singletons.zip", subdirectory = "packages/client" }
 
 [project.optional-dependencies]
 dev = [
