@@ -1,10 +1,36 @@
 from typing import Any
 
+from assertpy import assert_that
 from fastmcp.client.elicitation import ElicitRequestParams, ElicitResult
 from mcp.client.session import ClientSession
 from mcp.shared.context import RequestContext
 
+from ai_contained.core.mcp.harness import Harness
 from ai_contained.core.mcp.testing import Elicitor
+
+
+class LocalHarness(Harness):
+    """Harness with the aws-secrets auth tools callable directly.
+
+    Authorization happens the real way — the tool call with an accepted
+    elicitation — and the tool's parsed response is returned for assertions.
+    """
+
+    async def aws_auth_read(self, account_id: str) -> Any:
+        """Call the aws_auth_read tool for the account, accepting its elicitation."""
+        return await self._run_auth_tool("aws_auth_read", account_id)
+
+    async def aws_auth_write(self, account_id: str) -> Any:
+        """Call the aws_auth_write tool for the account, accepting its elicitation."""
+        return await self._run_auth_tool("aws_auth_write", account_id)
+
+    async def _run_auth_tool(self, tool: str, account_id: str) -> Any:
+        self.elicit.accept()
+        async with self.client() as c:
+            result = await c.tool(tool)(account_id=account_id)
+            assert_that(result.is_error).is_false()
+            return result.json()
+
 
 # The number of loop elicitations in _login_sso is non-deterministic: on slower CI
 # machines the subprocess exit event may not have been processed by asyncio before

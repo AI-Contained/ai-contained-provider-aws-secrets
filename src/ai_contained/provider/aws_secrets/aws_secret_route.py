@@ -19,7 +19,7 @@ class AwsSecretRoute:
         self._auth_read = auth_read
         self._auth_write = auth_write
 
-    async def handle(self, request: Request, body: dict[str, Any]) -> Response:
+    async def register(self, request: Request, body: dict[str, Any]) -> Response:
         """Validate the request, check authorization, and return credentials."""
         account_id = body.get("account_id")
         if account_id is None:

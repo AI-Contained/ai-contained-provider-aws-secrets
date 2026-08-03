@@ -11,6 +11,7 @@ from typing import Any, Protocol, assert_never
 from fastmcp import Context
 from fastmcp.exceptions import ToolError
 
+from ai_contained.core.mcp import Environ
 from ai_contained.provider.aws_secrets.accounts import Account
 from ai_contained.provider.aws_secrets.types import LoginType, Role
 
@@ -43,6 +44,10 @@ class CredentialsManagerBase(Protocol):
 class CredentialsManager(CredentialsManagerBase):
     """Real AWS credentials manager that shells out to the AWS CLI."""
 
+    def __init__(self, environ: Environ) -> None:
+        """Hold the container's launch environment — the base env for every AWS subprocess."""
+        self._environ = dict(environ)
+
     def _aws_env(self, **overrides: str) -> dict[str, str]:
         """Build the environment for AWS subprocesses.
 
@@ -51,9 +56,9 @@ class CredentialsManager(CredentialsManagerBase):
         HOME is redirected to AWS_HOME if set, else to dirname(AWS_ACCOUNTS_CONFIG_PATH)
         if set, else left as the container's HOME.
         """
-        env = {**os.environ, **overrides}
-        aws_home = os.environ.get("AWS_HOME") or (
-            os.path.dirname(config_path) if (config_path := os.environ.get("AWS_ACCOUNTS_CONFIG_PATH")) else None
+        env = {**self._environ, **overrides}
+        aws_home = self._environ.get("AWS_HOME") or (
+            os.path.dirname(config_path) if (config_path := self._environ.get("AWS_ACCOUNTS_CONFIG_PATH")) else None
         )
         if aws_home:
             env["HOME"] = aws_home
