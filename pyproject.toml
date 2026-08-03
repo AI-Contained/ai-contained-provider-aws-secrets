@@ -4,12 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-contained-provider-template"  # TODO: rename to ai-contained-provider-<yourprovider>
-version = "0.2.0"
+version = "0.3.0"
 description = "Hello World adventure game provider for AI-Contained"  # TODO: update
 requires-python = ">=3.12"
 dependencies = [
-    "ai-contained-core-mcp @ https://github.com/AI-Contained/ai-contained-base/archive/refs/tags/v0.3.1.zip#subdirectory=packages/core-mcp",
+    "ai-contained-core-mcp>=0.4.0",
 ]
+
+# Fallback source — only consulted when nothing else already satisfies the name in
+# the current resolve (e.g. a sibling /opt/ directory in a monolithic image build).
+[tool.uv.sources]
+ai-contained-core-mcp = { url = "https://github.com/AI-Contained/ai-contained-base/archive/refs/tags/v0.4.0.zip", subdirectory = "packages/core-mcp" }
 
 [project.optional-dependencies]
 dev = [
@@ -29,7 +34,7 @@ markers = [
 ]
 
 [project.entry-points."ai_contained.provider"]
-template = "ai_contained.provider.template:register"  # TODO: rename to <yourprovider> = "ai_contained.provider.<yourprovider>:register"
+template = "ai_contained.provider.template:provide"  # TODO: rename to <yourprovider> = "ai_contained.provider.<yourprovider>:provide"
 
 [tool.ruff]
 line-length = 120

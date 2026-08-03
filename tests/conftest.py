@@ -1,3 +1,4 @@
+import os
 from collections.abc import AsyncGenerator, Generator
 
 import pytest
@@ -5,15 +6,16 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
+from ai_contained.core.mcp import ProviderContext
 from ai_contained.core.mcp.testing import Elicitor
-from ai_contained.provider.template import register
+from ai_contained.provider.template import provide
 
 
 @pytest.fixture
 async def mcp() -> FastMCP:
     """Create a FastMCP server with the template provider registered."""
     server = FastMCP("test")
-    await register(server)
+    await provide(ProviderContext(server, os.environ))
     return server
 
 
