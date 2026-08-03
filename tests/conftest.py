@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 from typing import Any
 
 from assertpy import assert_that
