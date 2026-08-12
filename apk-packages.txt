@@ -3,4 +3,3 @@
 #  to include 'git'
 #
 aws-cli
-jq
